@@ -4245,6 +4245,8 @@
     "search": "Search hosts",
     "noResults": "No hosts match your search",
     "moveUp": "Move up",
-    "moveDown": "Move down"
+    "moveDown": "Move down",
+    "dragToReorder": "Drag to reorder",
+    "listChanged": "The host list has changed. It was reloaded; review it and save again."
   }
 }

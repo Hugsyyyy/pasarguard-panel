@@ -176,6 +176,75 @@ def test_operator_can_save_private_host_preferences(access_token):
         delete_admin(access_token, operator["username"])
 
 
+
+def test_operator_order_follows_the_owner_until_changed(access_token):
+    """Saving without reordering stores no positions, so the owner's later reordering still applies;
+    a reset clears everything, and a stale host list is refused with 409."""
+    core = create_core(access_token)
+    inbound = get_inbounds(access_token)[0]
+    operator = create_admin(access_token, role_id=3)
+    login = client.post(
+        "/api/admin/token",
+        data={"username": operator["username"], "password": operator["password"], "grant_type": "password"},
+    )
+    operator_headers = auth_headers(login.json()["access_token"])
+    host_payload = {
+        "remark": unique_name("order_host"),
+        "address": ["127.0.0.1"],
+        "port": 443,
+        "inbound_tag": inbound,
+        "priority": 5,
+    }
+    host_id = None
+    try:
+        created = client.post("/api/host", headers=auth_headers(access_token), json=host_payload)
+        assert created.status_code == status.HTTP_201_CREATED, created.text
+        host_id = created.json()["id"]
+        preferences = client.get("/api/hosts/preferences", headers=operator_headers).json()
+        assert any(item["id"] == host_id for item in preferences)
+
+        def body(remark_for_host):
+            return [
+                {
+                    "id": item["id"],
+                    "remark": remark_for_host if item["id"] == host_id else None,
+                    "priority": None,
+                    "enabled": True,
+                }
+                for item in preferences
+            ]
+
+        saved = client.put("/api/hosts/preferences", headers=operator_headers, json=body("Renamed"))
+        assert saved.status_code == status.HTTP_200_OK, saved.text
+        mine = next(item for item in saved.json() if item["id"] == host_id)
+        assert (mine["remark"], mine["priority"], mine["default_priority"]) == ("Renamed", 5, 5)
+
+        moved = client.put(
+            f"/api/host/{host_id}", headers=auth_headers(access_token), json={**host_payload, "priority": 7}
+        )
+        assert moved.status_code == status.HTTP_200_OK, moved.text
+        after = client.get("/api/hosts/preferences", headers=operator_headers).json()
+        mine = next(item for item in after if item["id"] == host_id)
+        assert (mine["remark"], mine["priority"]) == ("Renamed", 7)
+
+        reset = client.put("/api/hosts/preferences", headers=operator_headers, json=body(None))
+        assert reset.status_code == status.HTTP_200_OK, reset.text
+        mine = next(item for item in reset.json() if item["id"] == host_id)
+        assert (mine["remark"], mine["is_customized"]) == (host_payload["remark"], False)
+
+        stale = client.put(
+            "/api/hosts/preferences",
+            headers=operator_headers,
+            json=[item for item in body(None) if item["id"] != host_id],
+        )
+        assert stale.status_code == status.HTTP_409_CONFLICT, stale.text
+    finally:
+        if host_id is not None:
+            client.delete(f"/api/host/{host_id}", headers=auth_headers(access_token))
+        delete_admin(access_token, operator["username"])
+        delete_core(access_token, core["id"])
+
+
 def test_host_update(access_token):
     """Test that the host update route is accessible."""
 

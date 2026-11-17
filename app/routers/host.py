@@ -2,9 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 
+from app.core.host_preferences import (
+    custom_priority,
+    custom_remark,
+    is_enabled,
+    personalize_hosts,
+    saved_hosts,
+)
 from app.db import AsyncSession, get_db
-from app.db.models import Admin
+from app.db.models import Admin, Group, ProxyInbound
 from app.models.admin import AdminDetails
+from app.models.admin_role import PermissionScope
 from app.models.host import (
     BaseHost,
     BulkHostsActionResponse,
@@ -16,6 +24,7 @@ from app.models.host import (
 )
 from app.operation import OperatorType
 from app.operation.host import HostOperation
+from app.operation.permissions import _get_resource_action, _permission_level
 from app.utils import responses
 
 from .authentication import get_current, require_permission
@@ -26,10 +35,12 @@ router = APIRouter(tags=["Host"], prefix="/api/host", responses={401: responses.
 
 
 class HostPreference(BaseModel):
+    """One host as an admin sees it on "My Hosts" (output only: shared values are not limited here)."""
+
     id: int
-    remark: str = Field(min_length=1, max_length=256)
+    remark: str
     default_remark: str
-    priority: int = Field(ge=0, le=1000000)
+    priority: int
     default_priority: int
     is_customized: bool = False
     enabled: bool = True
@@ -38,7 +49,8 @@ class HostPreference(BaseModel):
 class HostPreferenceUpdate(BaseModel):
     id: int
     remark: str | None = Field(default=None, min_length=1, max_length=256)
-    priority: int = Field(ge=0, le=1000000)
+    # None keeps the shared order for this host (send None for every host to follow the owner's order)
+    priority: int | None = Field(default=None, ge=0, le=1000000)
     enabled: bool = True
 
     @field_validator("remark")
@@ -52,48 +64,67 @@ class HostPreferenceUpdate(BaseModel):
         return validate_format_variables(value)
 
 
-async def _operator_account(db: AsyncSession, admin: AdminDetails) -> Admin:
-    if admin.id is None or admin.role.is_owner or admin.role.name != "operator":
-        raise HTTPException(status_code=403, detail="Operator role required")
+def can_personalize_hosts(admin: AdminDetails) -> bool:
+    """Admins who cannot create or edit the shared hosts get their own view of them.
+
+    Decided by permissions, not by the role's name: a renamed or copied operator role keeps the
+    feature, and nobody who can edit the shared hosts gets a private view they could save back.
+    """
+    if admin.id is None or admin.is_owner:
+        return False
+    return all(
+        _permission_level(_get_resource_action(admin, "hosts", action)) == PermissionScope.NONE
+        for action in ("create", "update")
+    )
+
+
+async def _personalizing_account(db: AsyncSession, admin: AdminDetails) -> Admin:
+    if not can_personalize_hosts(admin):
+        raise HTTPException(status_code=403, detail="Only admins who cannot edit hosts can personalize them")
     account = await db.scalar(select(Admin).where(Admin.id == admin.id))
     if account is None:
-        raise HTTPException(status_code=403, detail="Operator account required")
+        raise HTTPException(status_code=403, detail="Admin account required")
     return account
 
 
-def _apply_host_preferences(hosts: list[BaseHost], account: Admin) -> list[BaseHost]:
-    saved_hosts = (account.host_preferences or {}).get("hosts", {})
-    personalized = [
-        host.model_copy(
-            update={
-                "remark": saved_hosts.get(str(host.id), {}).get("remark") or host.remark,
-                "priority": saved_hosts.get(str(host.id), {}).get("priority", host.priority),
-            }
+async def _personalizable_hosts(db: AsyncSession, admin: AdminDetails) -> tuple[list[BaseHost], list[BaseHost]]:
+    """(all hosts, the ones this admin can personalize): enabled hosts of the groups the role may use."""
+    all_hosts = await host_operator.get_hosts(db, HostListQuery())
+    hosts = [host for host in all_hosts if not host.is_disabled]
+    access = admin.role.access if admin.role else None
+    allowed_group_ids = access.allowed_group_ids if access else None
+    if allowed_group_ids is not None:
+        tags = set(
+            await db.scalars(
+                select(ProxyInbound.tag).join(ProxyInbound.groups).where(Group.id.in_(allowed_group_ids))
+            )
         )
-        for host in hosts
-        if saved_hosts.get(str(host.id), {}).get("enabled", True)
-    ]
-    return sorted(personalized, key=lambda item: (item.priority, item.id))
+        hosts = [host for host in hosts if host.inbound_tag in tags]
+    return all_hosts, hosts
 
 
 @router.get("s/preferences", response_model=list[HostPreference])
 async def get_host_preferences(db: AsyncSession = Depends(get_db), admin: AdminDetails = Depends(get_current)):
-    account = await _operator_account(db, admin)
-    hosts = [host for host in await host_operator.get_hosts(db, HostListQuery()) if not host.is_disabled]
-    saved = account.host_preferences or {}
-    saved_hosts = saved.get("hosts", {})
-    preferences = [
-        HostPreference(
-            id=host.id,
-            remark=saved_hosts.get(str(host.id), {}).get("remark") or host.remark,
-            default_remark=host.remark,
-            priority=saved_hosts.get(str(host.id), {}).get("priority", host.priority),
-            default_priority=host.priority,
-            is_customized=bool(saved_hosts.get(str(host.id), {}).get("remark")),
-            enabled=saved_hosts.get(str(host.id), {}).get("enabled", True),
+    """The hosts as this admin's users see them ("My Hosts")."""
+    account = await _personalizing_account(db, admin)
+    _, hosts = await _personalizable_hosts(db, admin)
+    saved = saved_hosts(account.host_preferences)
+    preferences = []
+    for host in hosts:
+        entry = saved.get(str(host.id))
+        remark = custom_remark(entry)
+        priority = custom_priority(entry)
+        preferences.append(
+            HostPreference(
+                id=host.id,
+                remark=remark or host.remark,
+                default_remark=host.remark,
+                priority=host.priority if priority is None else priority,
+                default_priority=host.priority,
+                is_customized=remark is not None,
+                enabled=is_enabled(entry),
+            )
         )
-        for host in hosts
-    ]
     return sorted(preferences, key=lambda item: (item.priority, item.id))
 
 
@@ -103,29 +134,31 @@ async def save_host_preferences(
     db: AsyncSession = Depends(get_db),
     admin: AdminDetails = Depends(get_current),
 ):
-    account = await _operator_account(db, admin)
-    all_hosts = await host_operator.get_hosts(db, HostListQuery())
-    hosts = [host for host in all_hosts if not host.is_disabled]
-    current_ids = {host.id for host in hosts}
+    """Save this admin's names, order and visibility. Every host of the page must be sent exactly once."""
+    account = await _personalizing_account(db, admin)
+    if admin.is_limited:
+        raise HTTPException(status_code=403, detail="Admin is limited — write actions blocked")
+    all_hosts, hosts = await _personalizable_hosts(db, admin)
     submitted_ids = [item.id for item in preferences]
-    if len(submitted_ids) != len(set(submitted_ids)) or set(submitted_ids) != current_ids:
-        raise HTTPException(status_code=400, detail="Submit each current host exactly once")
-    saved_hosts = (account.host_preferences or {}).get("hosts", {})
-    current_hosts = {host.id: host for host in hosts}
+    if len(submitted_ids) != len(set(submitted_ids)) or set(submitted_ids) != {host.id for host in hosts}:
+        raise HTTPException(status_code=409, detail="The host list has changed; reload the page and save again")
+    saved = saved_hosts(account.host_preferences)
+    # Keep what was saved for hosts this page does not show (disabled by the owner, other groups).
     existing_ids = {str(host.id) for host in all_hosts}
-    updated_hosts = {host_id: value for host_id, value in saved_hosts.items() if host_id in existing_ids}
+    updated = {host_id: entry for host_id, entry in saved.items() if host_id in existing_ids}
     for item in preferences:
         host_id = str(item.id)
-        previous = saved_hosts.get(host_id, {})
-        remains_disabled = previous.get("enabled", True) is False and not item.enabled
-        updated_hosts[host_id] = {
-            "remark": previous.get("remark") if remains_disabled else item.remark,
-            "priority": previous.get("priority", current_hosts[item.id].priority)
-            if remains_disabled
-            else item.priority,
-            "enabled": item.enabled,
-        }
-    account.host_preferences = {"hosts": updated_hosts}
+        previous = saved.get(host_id)
+        if not item.enabled and not is_enabled(previous):
+            # A host that stays hidden keeps its saved name and place (the page does not edit them).
+            entry = {"remark": custom_remark(previous), "priority": custom_priority(previous), "enabled": False}
+        else:
+            entry = {"remark": item.remark, "priority": item.priority, "enabled": item.enabled}
+        if entry["remark"] is None and entry["priority"] is None and entry["enabled"]:
+            updated.pop(host_id, None)  # nothing personal left: follow the shared host
+        else:
+            updated[host_id] = entry
+    account.host_preferences = {"hosts": updated} if updated else None
     await db.commit()
     return await get_host_preferences(db, admin)
 
@@ -150,9 +183,10 @@ async def get_hosts(
     Get proxy hosts.
     """
     hosts = await host_operator.get_hosts(db=db, query=query)
-    if admin.role.name == "operator" and not admin.role.is_owner:
-        account = await _operator_account(db, admin)
-        return _apply_host_preferences(hosts, account)
+    if can_personalize_hosts(admin):
+        account = await db.scalar(select(Admin).where(Admin.id == admin.id))
+        if account is not None:
+            return personalize_hosts(hosts, account.host_preferences)
     return hosts
 
 

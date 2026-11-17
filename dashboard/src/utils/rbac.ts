@@ -34,6 +34,19 @@ export const hasScopeAll = (admin: AdminDetails | null | undefined, resource: st
 }
 
 /**
+ * "My Hosts": admins who can neither create nor edit the shared hosts personalize them for their
+ * own users. Same rule as the API (by permissions, not the role's name).
+ */
+export const canPersonalizeHosts = (admin: AdminDetails | null | undefined) => {
+  if (!admin || isOwner(admin)) return false
+  return ['create', 'update'].every(action => {
+    const value = getActionPermission(admin, 'hosts', action)
+    if (value === true) return false
+    return !(typeof value === 'object' && value !== null && value.scope != null && Number(value.scope) !== 0)
+  })
+}
+
+/**
  * Full dashboard pages are exposed by the resource `read` permission only.
  * Simple read permissions are reserved for selector/dropdown endpoints and do
  * not grant page access.

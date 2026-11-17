@@ -6,6 +6,7 @@ from datetime import UTC, datetime as dt, timedelta
 
 from jdatetime import date as jd
 
+from app.core.host_preferences import has_custom_order, personalize_hosts
 from app.core.hosts import host_manager
 from app.db.crud.wireguard import pick_peer_ip_for_inbound
 from app.db.models import UserStatus
@@ -459,20 +460,11 @@ async def process_inbounds_and_tags(
     proxy_settings = user.proxy_settings.dict()
     proxy_settings["_user_id"] = user.id
     hosts = await filter_hosts(list((await host_manager.get_hosts()).values()), user.status)
-    host_preferences = (user.admin.host_preferences or {}).get("hosts", {}) if user.admin else {}
-    if host_preferences:
-        hosts = [
-            host.model_copy(
-                update={
-                    "remark": host_preferences.get(str(host.id), {}).get("remark") or host.remark,
-                    "priority": host_preferences.get(str(host.id), {}).get("priority", host.priority),
-                }
-            )
-            for host in hosts
-            if host_preferences.get(str(host.id), {}).get("enabled", True)
-        ]
-        hosts.sort(key=lambda host: (host.priority, host.id))
-    if randomize_order and len(hosts) > 1 and not host_preferences:
+    # The user's admin may have personalized the hosts ("My Hosts"). A chosen order replaces the
+    # random order; renaming or hiding hosts alone keeps it.
+    host_preferences = getattr(user.admin, "host_preferences", None) if user.admin else None
+    hosts = personalize_hosts(hosts, host_preferences)
+    if randomize_order and len(hosts) > 1 and not has_custom_order(host_preferences):
         random.shuffle(hosts)
 
     def _resolve_host_xray_template_content(inbound: SubscriptionInboundData) -> str | None:

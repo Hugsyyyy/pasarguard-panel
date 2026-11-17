@@ -19,7 +19,7 @@ import { toast } from 'sonner'
 type HostPreference = { id: number; remark: string; default_remark: string; priority: number; default_priority: number; is_customized: boolean; enabled: boolean }
 type ResetConfirmation = 'order' | 'all' | null
 
-function SortableHostRow({ id, disabled, rowRef, children }: { id: number; disabled: boolean; rowRef: (element: HTMLDivElement | null) => void; children: (dragHandle: ReactNode) => ReactNode }) {
+function SortableHostRow({ id, disabled, label, rowRef, children }: { id: number; disabled: boolean; label: string; rowRef: (element: HTMLDivElement | null) => void; children: (dragHandle: ReactNode) => ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled })
   const dragHandle = (
     <Button
@@ -27,8 +27,8 @@ function SortableHostRow({ id, disabled, rowRef, children }: { id: number; disab
       variant="outline"
       size="icon"
       className="h-8 w-8 shrink-0 touch-none"
-      aria-label="Drag to reorder host"
-      title="Drag to reorder"
+      aria-label={label}
+      title={label}
       disabled={disabled}
       {...attributes}
       {...listeners}
@@ -184,16 +184,34 @@ export default function HostPreferencesPage() {
       toast.error(t('hostPreferences.remarkRequired', { defaultValue: 'A server name cannot be empty' }))
       return
     }
+    // Positions are sent only when the order differs from the shared one; otherwise the users keep
+    // following the owner's order (and any later change to it).
+    const enabledIds = hosts.filter(host => host.enabled).map(host => host.id)
+    const defaultIds = hosts
+      .filter(host => host.enabled)
+      .sort((a, b) => a.default_priority - b.default_priority || a.id - b.id)
+      .map(host => host.id)
+    const customOrder = enabledIds.some((id, index) => id !== defaultIds[index])
     setSaving(true)
     try {
       await fetcher<HostPreference[]>('/api/hosts/preferences', {
         method: 'PUT',
-        body: hosts.map(({ id, remark, default_remark, priority, enabled }) => ({ id, remark: remark === default_remark ? null : remark, priority, enabled })),
+        body: hosts.map(({ id, remark, default_remark, enabled }, index) => ({
+          id,
+          remark: remark.trim() === default_remark ? null : remark,
+          priority: customOrder ? index : null,
+          enabled,
+        })),
       })
       await client.invalidateQueries({ queryKey: ['host-preferences'] })
       toast.success(t('hostPreferences.saved', { defaultValue: 'Host preferences saved' }))
-    } catch {
-      toast.error(t('hostPreferences.saveFailed', { defaultValue: 'Could not save host preferences' }))
+    } catch (error) {
+      if ((error as { status?: number } | null)?.status === 409) {
+        toast.error(t('hostPreferences.listChanged', { defaultValue: 'The host list has changed. It was reloaded; review it and save again.' }))
+        await client.invalidateQueries({ queryKey: ['host-preferences'] })
+      } else {
+        toast.error(t('hostPreferences.saveFailed', { defaultValue: 'Could not save host preferences' }))
+      }
     } finally {
       setSaving(false)
     }
@@ -271,6 +289,7 @@ export default function HostPreferencesPage() {
                       key={host.id}
                       id={host.id}
                       disabled={!host.enabled}
+                      label={t('hostPreferences.dragToReorder', { defaultValue: 'Drag to reorder' })}
                       rowRef={element => {
                         if (element) rowRefs.current.set(host.id, element)
                         else rowRefs.current.delete(host.id)
@@ -364,7 +383,7 @@ export default function HostPreferencesPage() {
           </DndContext>
         )}
         <Button onClick={save} disabled={saving || isLoading || hosts.some(host => !host.remark.trim())}>
-          <Save className="mr-2 h-4 w-4" />
+          <Save className="me-2 h-4 w-4" />
           {t('hostPreferences.save', { defaultValue: 'Save changes' })}
         </Button>
       </div>

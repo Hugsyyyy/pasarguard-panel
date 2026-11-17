@@ -1,6 +1,6 @@
-"""add per-admin host display preferences
+"""add per-admin host display preferences (Pengu fork: My Hosts)
 
-Revision ID: b602fc7f63d8
+Revision ID: pengu_0001
 Revises: 1a2b3c4d5e6f
 Create Date: 2026-11-08 00:00:00.000000
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "b602fc7f63d8"
+revision = "pengu_0001"
 down_revision = "1a2b3c4d5e6f"
 branch_labels = None
 depends_on = None

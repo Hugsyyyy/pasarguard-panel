@@ -41,8 +41,7 @@ export const canPersonalizeHosts = (admin: AdminDetails | null | undefined) => {
   if (!admin || isOwner(admin)) return false
   return ['create', 'update'].every(action => {
     const value = getActionPermission(admin, 'hosts', action)
-    if (value === true) return false
-    return !(typeof value === 'object' && value !== null && value.scope != null && Number(value.scope) !== 0)
+    return !value || isScopeNone(value)
   })
 }
 
@@ -86,6 +85,7 @@ export const canAccessRoute = (admin: AdminDetails | null | undefined, pathname:
   if (pathname.startsWith('/theme') || pathname.startsWith('/settings/theme')) return true
   if (pathname.startsWith('/users')) return hasPermission(admin, 'users', 'read')
   if (pathname.startsWith('/statistics')) return hasPermission(admin, 'nodes', 'stats')
+  if (pathname.startsWith('/host-preferences')) return canPersonalizeHosts(admin)
   if (pathname.startsWith('/hosts')) return canReadResourcePage(admin, 'hosts')
   if (pathname.startsWith('/groups')) return canReadResourcePage(admin, 'groups')
   if (pathname === '/templates') return canReadResourcePage(admin, 'templates') || canReadResourcePage(admin, 'client_templates')

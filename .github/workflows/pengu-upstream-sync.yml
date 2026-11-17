@@ -3,6 +3,12 @@ name: Pengu upstream sync
 # Once a day: if PasarGuard published a release that is not in `pengu` yet, merge it into a
 # `sync/<tag>` branch, join the migration heads, open a pull request and run the tests on it.
 # A merge conflict opens an issue instead. Nothing is deployed from here.
+#
+# Token: the repository secret SYNC_TOKEN (a fine-grained token for this repository with Contents,
+# Pull requests, Issues and Workflows: read and write) is used when set. GitHub never lets the
+# default GITHUB_TOKEN push changes to .github/workflows/, and upstream releases often change them;
+# without SYNC_TOKEN such a release gets an issue asking for a manual push (see PENGU.md).
+#
 # Conditions compare with 'new'/'yes': a skipped step's output is null, and in Actions
 # expressions null == '0' is true (both become the number 0).
 
@@ -28,13 +34,15 @@ jobs:
     sync:
         runs-on: ubuntu-latest
         env:
-            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            GH_TOKEN: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+            HAS_SYNC_TOKEN: ${{ secrets.SYNC_TOKEN != '' }}
         steps:
             - name: Checkout pengu
               uses: actions/checkout@v7
               with:
                   ref: pengu
                   fetch-depth: 0
+                  token: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
 
             - name: Find the upstream release
               id: find
@@ -53,34 +61,47 @@ jobs:
                   git remote add upstream https://github.com/PasarGuard/panel.git
                   git fetch --no-tags upstream "refs/tags/$tag:refs/tags/$tag"
                   if git merge-base --is-ancestor "$tag" HEAD; then
-                      echo "pengu already contains $tag"
-                      echo "state=current" >> "$GITHUB_OUTPUT"
+                      state=current
+                  elif [ "$(gh pr list --head "sync/$tag" --state open --json number --jq length)" != 0 ]; then
+                      state=open
                   elif git ls-remote --exit-code --heads origin "sync/$tag" > /dev/null; then
-                      echo "sync/$tag already exists"
-                      echo "state=open" >> "$GITHUB_OUTPUT"
+                      state=retry # the branch is there but its pull request was never opened
                   else
-                      echo "state=new" >> "$GITHUB_OUTPUT"
+                      state=new
                   fi
+                  echo "state=$state" >> "$GITHUB_OUTPUT"
+                  echo "$tag: $state"
 
-            - name: Merge into sync branch
+            - name: Merge into the sync branch
               id: merge
               if: steps.find.outputs.state == 'new'
               env:
                   TAG: ${{ steps.find.outputs.tag }}
               run: |
+                  open_issue() { # title, body: once, while an issue with that title is open
+                      if [ "$(gh issue list --state open --search "\"$1\" in:title" --json number --jq length)" = 0 ]; then
+                          gh issue create --title "$1" --body "$2"
+                      fi
+                  }
                   git config user.name "github-actions[bot]"
                   git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
                   git checkout -b "sync/$TAG"
-                  if git merge --no-ff --no-edit -m "Merge upstream $TAG" "$TAG"; then
-                      echo "merged=yes" >> "$GITHUB_OUTPUT"
+                  if ! git merge --no-ff --no-edit -m "Merge upstream $TAG" "$TAG"; then
+                      files=$(git diff --name-only --diff-filter=U)
+                      git merge --abort
+                      open_issue "Upstream $TAG needs a manual merge" "$(printf 'Merging upstream `%s` into `pengu` conflicts in:\n\n%s\n\nMerge it by hand on a `sync/%s` branch (see PENGU.md).' \
+                          "$TAG" "$(echo "$files" | sed 's/^/- `/; s/$/`/')" "$TAG")"
+                      echo "merged=no" >> "$GITHUB_OUTPUT"
                       exit 0
                   fi
-                  files=$(git diff --name-only --diff-filter=U)
-                  git merge --abort
-                  body=$(printf 'Merging upstream `%s` into `pengu` conflicts in:\n\n%s\n\nMerge it by hand on a `sync/%s` branch (see PENGU.md).' \
-                      "$TAG" "$(echo "$files" | sed 's/^/- `/; s/$/`/')" "$TAG")
-                  gh issue create --title "Upstream $TAG needs a manual merge" --body "$body"
-                  echo "merged=no" >> "$GITHUB_OUTPUT"
+                  workflows=$(git diff --name-only origin/pengu HEAD -- .github/workflows)
+                  if [ -n "$workflows" ] && [ "$HAS_SYNC_TOKEN" != "true" ]; then
+                      open_issue "Upstream $TAG changes workflow files: push it by hand" "$(printf 'The merge of `%s` changes:\n\n%s\n\nGitHub does not let the default token push workflow changes. Add the `SYNC_TOKEN` secret (see PENGU.md) and run this workflow again, or merge and push it by hand.' \
+                          "$TAG" "$(echo "$workflows" | sed 's/^/- `/; s/$/`/')")"
+                      echo "merged=no" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+                  echo "merged=yes" >> "$GITHUB_OUTPUT"
 
             - uses: actions/setup-python@v7
               if: steps.find.outputs.state == 'new' && steps.merge.outputs.merged == 'yes'
@@ -93,23 +114,27 @@ jobs:
                   TAG: ${{ steps.find.outputs.tag }}
               run: |
                   make setup-test
-                  uv run alembic heads | tee heads.txt
-                  if [ "$(grep -c . heads.txt)" -gt 1 ]; then
+                  if [ "$(uv run alembic heads | grep -c .)" -gt 1 ]; then
                       rev="pengu_merge_$(echo "$TAG" | tr -cd '0-9')"
                       uv run alembic merge heads -m "pengu merge upstream $TAG" --rev-id "$rev"
+                      uv run ruff format app/db/migrations/versions/${rev}_*.py
                       git add app/db/migrations/versions
                       git commit -m "chore(db): join upstream $TAG migrations with the fork's"
                   fi
-                  rm -f heads.txt
 
             - name: Push, open the pull request and run the tests
-              if: steps.find.outputs.state == 'new' && steps.merge.outputs.merged == 'yes'
+              if: (steps.find.outputs.state == 'new' && steps.merge.outputs.merged == 'yes') || steps.find.outputs.state == 'retry'
               env:
                   TAG: ${{ steps.find.outputs.tag }}
+                  STATE: ${{ steps.find.outputs.state }}
               run: |
-                  git push origin "sync/$TAG"
-                  body=$(printf 'Upstream release [%s](https://github.com/PasarGuard/panel/releases/tag/%s) merged into `pengu`.\n\nBefore merging: the tests below must pass, then tag `%s-pengu.1` to build the image (see PENGU.md).' "$TAG" "$TAG" "$TAG")
+                  if [ "$STATE" = new ]; then
+                      git push origin "sync/$TAG"
+                  fi
+                  body=$(printf 'Upstream release [%s](https://github.com/PasarGuard/panel/releases/tag/%s) merged into `pengu`.\n\nBefore merging: the tests below must pass. Then tag `%s-pengu.1` to build the image and the release (see PENGU.md).' "$TAG" "$TAG" "$TAG")
                   gh pr create --base pengu --head "sync/$TAG" --title "Sync upstream $TAG" --body "$body"
-                  # Pushes and PRs made with GITHUB_TOKEN do not start other workflows; dispatches do.
-                  gh workflow run pengu-ci.yml --ref "sync/$TAG"
-                  gh workflow run test-database-migrations.yml --ref "sync/$TAG"
+                  if [ "$HAS_SYNC_TOKEN" != "true" ]; then
+                      # pushes and pull requests made with GITHUB_TOKEN start no workflows; dispatches do
+                      gh workflow run pengu-ci.yml --ref "sync/$TAG"
+                      gh workflow run test-database-migrations.yml --ref "sync/$TAG"
+                  fi

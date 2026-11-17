@@ -4247,6 +4247,11 @@
     "moveUp": "Move up",
     "moveDown": "Move down",
     "dragToReorder": "Drag to reorder",
-    "listChanged": "The host list has changed. It was reloaded; review it and save again."
+    "listChanged": "The host list has changed. It was reloaded; review it and save again.",
+    "resetDone": "All host preferences were reset",
+    "forbidden": "Your account cannot change My Hosts right now.",
+    "invalidRemark": "A server name is not valid. Check the variables in braces.",
+    "limited": "Your account is limited, so changes cannot be saved right now.",
+    "loadFailed": "My Hosts is not available for your account."
   }
 }

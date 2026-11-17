@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { VariablesPopover } from '@/components/ui/variables-popover'
+import { useAdmin } from '@/hooks/use-admin'
 import { cn } from '@/lib/utils'
 import { fetcher } from '@/service/http'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
@@ -15,6 +16,7 @@ import { ArrowDown, ArrowUp, Grip, RotateCcw, Save, Search } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { isLimited } from '@/utils/rbac'
 
 type HostPreference = { id: number; remark: string; default_remark: string; priority: number; default_priority: number; is_customized: boolean; enabled: boolean }
 type ResetConfirmation = 'order' | 'all' | null
@@ -55,7 +57,9 @@ function SortableHostRow({ id, disabled, label, rowRef, children }: { id: number
 export default function HostPreferencesPage() {
   const { t } = useTranslation()
   const client = useQueryClient()
-  const { data = [], isLoading } = useQuery({ queryKey: ['host-preferences'], queryFn: () => fetcher<HostPreference[]>('/api/hosts/preferences') })
+  const { admin } = useAdmin()
+  const limited = isLimited(admin)
+  const { data, isLoading, isError } = useQuery({ queryKey: ['host-preferences'], queryFn: () => fetcher<HostPreference[]>('/api/hosts/preferences'), retry: false })
   const [hosts, setHosts] = useState<HostPreference[]>([])
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
@@ -66,7 +70,9 @@ export default function HostPreferencesPage() {
   const previousPositions = useRef<Map<number, DOMRect> | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
 
-  useEffect(() => setHosts(data), [data])
+  useEffect(() => {
+    if (data) setHosts(data)
+  }, [data])
   useEffect(
     () => () => {
       if (highlightTimer.current) clearTimeout(highlightTimer.current)
@@ -155,14 +161,25 @@ export default function HostPreferencesPage() {
     })
   }
 
-  const resetAll = () => {
-    capturePositions()
-    setHosts(current =>
-      [...current]
-        .map(host => ({ ...host, remark: host.default_remark, priority: host.default_priority, is_customized: false, enabled: true }))
-        .sort((a, b) => a.priority - b.priority || a.id - b.id)
-        .map((host, priority) => ({ ...host, priority })),
-    )
+  const errorMessage = (error: unknown) => {
+    const status = (error as { status?: number } | null)?.status
+    if (status === 403) return t('hostPreferences.forbidden', { defaultValue: 'Your account cannot change My Hosts right now.' })
+    if (status === 422) return t('hostPreferences.invalidRemark', { defaultValue: 'A server name is not valid. Check the variables in braces.' })
+    return t('hostPreferences.saveFailed', { defaultValue: 'Could not save host preferences' })
+  }
+
+  // A real reset on the server: also forgets hosts this page no longer shows.
+  const resetAll = async () => {
+    setSaving(true)
+    try {
+      await fetcher('/api/hosts/preferences', { method: 'DELETE' })
+      await client.invalidateQueries({ queryKey: ['host-preferences'] })
+      toast.success(t('hostPreferences.resetDone', { defaultValue: 'All host preferences were reset' }))
+    } catch (error) {
+      toast.error(errorMessage(error))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const resetName = (host: HostPreference) => {
@@ -198,7 +215,7 @@ export default function HostPreferencesPage() {
         method: 'PUT',
         body: hosts.map(({ id, remark, default_remark, enabled }, index) => ({
           id,
-          remark: remark.trim() === default_remark ? null : remark,
+          remark: remark.trim() === default_remark.trim() ? null : remark,
           priority: customOrder ? index : null,
           enabled,
         })),
@@ -210,7 +227,7 @@ export default function HostPreferencesPage() {
         toast.error(t('hostPreferences.listChanged', { defaultValue: 'The host list has changed. It was reloaded; review it and save again.' }))
         await client.invalidateQueries({ queryKey: ['host-preferences'] })
       } else {
-        toast.error(t('hostPreferences.saveFailed', { defaultValue: 'Could not save host preferences' }))
+        toast.error(errorMessage(error))
       }
     } finally {
       setSaving(false)
@@ -240,6 +257,7 @@ export default function HostPreferencesPage() {
           className="w-full gap-2 px-2 text-xs whitespace-nowrap sm:text-sm lg:h-9 lg:w-9 lg:px-0"
           aria-label={t('hostPreferences.resetOrder', { defaultValue: 'Reset order' })}
           title={t('hostPreferences.resetOrder', { defaultValue: 'Reset order' })}
+          disabled={limited || isError}
           onClick={() => setResetConfirmation('order')}
         >
           <ArrowUp className="h-4 w-4 shrink-0" />
@@ -252,6 +270,7 @@ export default function HostPreferencesPage() {
           className="w-full gap-2 px-2 text-xs whitespace-nowrap sm:text-sm lg:h-9 lg:w-9 lg:px-0"
           aria-label={t('hostPreferences.resetAll', { defaultValue: 'Reset all' })}
           title={t('hostPreferences.resetAll', { defaultValue: 'Reset all' })}
+          disabled={saving || limited || isError}
           onClick={() => setResetConfirmation('all')}
         >
           <RotateCcw className="h-4 w-4 shrink-0" />
@@ -275,8 +294,13 @@ export default function HostPreferencesPage() {
       </div>
       <div className="w-full space-y-3 p-4">
         {toolbar('lg:hidden')}
+        {limited && (
+          <p className="text-muted-foreground text-sm">{t('hostPreferences.limited', { defaultValue: 'Your account is limited, so changes cannot be saved right now.' })}</p>
+        )}
         {isLoading ? (
           <p>{t('loading', { defaultValue: 'Loading...' })}</p>
+        ) : isError ? (
+          <p className="text-muted-foreground py-6 text-center text-sm">{t('hostPreferences.loadFailed', { defaultValue: 'My Hosts is not available for your account.' })}</p>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={visibleHosts.map(host => host.id)} strategy={rectSortingStrategy}>
@@ -382,7 +406,7 @@ export default function HostPreferencesPage() {
             </SortableContext>
           </DndContext>
         )}
-        <Button onClick={save} disabled={saving || isLoading || hosts.some(host => !host.remark.trim())}>
+        <Button onClick={save} disabled={saving || isLoading || isError || limited || hosts.some(host => !host.remark.trim())}>
           <Save className="me-2 h-4 w-4" />
           {t('hostPreferences.save', { defaultValue: 'Save changes' })}
         </Button>
@@ -405,7 +429,7 @@ export default function HostPreferencesPage() {
             <AlertDialogCancel>{t('hostPreferences.cancel', { defaultValue: 'Cancel' })}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (resetConfirmation === 'all') resetAll()
+                if (resetConfirmation === 'all') void resetAll()
                 else if (resetConfirmation === 'order') resetOrder()
                 setResetConfirmation(null)
               }}

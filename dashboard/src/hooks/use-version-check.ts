@@ -18,13 +18,23 @@ interface UseVersionCheckOptions {
   enabled?: boolean
 }
 
-const GITHUB_API_URL = 'https://api.github.com/repos/PasarGuard/panel/releases/latest'
-const CACHE_KEY = 'pg_release'
+// Pengu fork: updates come from the fork's releases (vX.Y.Z-pengu.N).
+const GITHUB_API_URL = 'https://api.github.com/repos/Hugsyyyy/pasarguard-panel/releases/latest'
+const CACHE_KEY = 'pengu_release'
 const CACHE_DURATION = 10 * 60 * 1000
 
+// 5.6.0-pengu.2 compares as 5.6.0.2, the same normalization the sidebar applies to the panel's version.
+const versionParts = (version: string) =>
+  version
+    .replace(/^v/, '')
+    .replace(/[^0-9.]/g, '')
+    .split('.')
+    .filter(Boolean)
+    .map(Number)
+
 function compareVersions(current: string, latest: string): number {
-  const currentParts = current.replace(/^v/, '').split('.').map(Number)
-  const latestParts = latest.replace(/^v/, '').split('.').map(Number)
+  const currentParts = versionParts(current)
+  const latestParts = versionParts(latest)
 
   for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
     const curr = currentParts[i] || 0

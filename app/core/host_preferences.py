@@ -15,10 +15,6 @@ Stored in ``admins.host_preferences``::
 Malformed entries are ignored rather than trusted: a subscription must never fail because of them.
 """
 
-from typing import TypeVar
-
-H = TypeVar("H")
-
 
 def saved_hosts(host_preferences: dict | None) -> dict[str, dict]:
     """The per-host entries, keyed by host id as a string; empty when nothing usable is saved."""
@@ -48,7 +44,7 @@ def has_custom_order(host_preferences: dict | None) -> bool:
     return any(custom_priority(entry) is not None for entry in saved_hosts(host_preferences).values())
 
 
-def personalize_hosts(hosts: list[H], host_preferences: dict | None) -> list[H]:
+def personalize_hosts[H](hosts: list[H], host_preferences: dict | None) -> list[H]:
     """Apply saved names, order and visibility to hosts (anything with id, remark and priority).
 
     Without saved preferences the list comes back unchanged. The list is re-sorted only when the

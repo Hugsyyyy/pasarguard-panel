@@ -69,7 +69,7 @@
 2. پشتیبان رسمی بگیرید: `pasarguard backup`.
 3. در `/opt/pasarguard/docker-compose.yml`، جلوی سرویس `pasarguard` بنویسید:
    `image: ghcr.io/hugsyyyy/pasarguard-panel:pengu-latest`
-4. `pasarguard update` بزنید.
+4. فقط پنل را با image تازه بالا بیاورید: `cd /opt/pasarguard && docker compose pull pasarguard && docker compose up -d --no-deps pasarguard`. (`pasarguard update` هم کار می‌کند، ولی همهٔ imageها، از جمله پایگاه داده، را می‌کشد و همه را ری‌استارت می‌کند.)
 
 از این به بعد **`pasarguard update` از همین مخزن به‌روز می‌کند**: آخرین انتشار ما (`pengu-latest`) را می‌کشد و پنل را ری‌استارت می‌کند. مهاجرت‌های پایگاه داده خودکار اجرا می‌شوند.
 
@@ -77,11 +77,14 @@
 
 ## برگشت به نسخهٔ رسمی
 
-اول با image همین فورک مهاجرت‌های ما را برگردانید تا جدول‌ها مثل نسخهٔ رسمی شوند، بعد image را عوض کنید:
+پنل را خاموش کنید، با image همین فورک مهاجرت‌های ما را برگردانید تا جدول‌ها مثل نسخهٔ رسمی شوند، بعد image را عوض کنید:
 
 ```sh
-docker compose -f /opt/pasarguard/docker-compose.yml run --rm --entrypoint python pasarguard -m alembic downgrade <آخرین مهاجرت نسخهٔ رسمی؛ برای 5.6.0: 1a2b3c4d5e6f>
-# بعد image را به pasarguard/panel:<همان نسخه> برگردانید و pasarguard restart
+cd /opt/pasarguard
+docker compose stop pasarguard
+docker compose run --rm --no-deps --entrypoint python pasarguard -m alembic downgrade <آخرین مهاجرت نسخهٔ رسمی؛ برای 5.6.0: 1a2b3c4d5e6f>
+# خط image را به pasarguard/panel:<همان نسخه> برگردانید، بعد:
+docker compose up -d --no-deps pasarguard
 ```
 
 با این کار تنظیمات «هاست‌های من» پاک می‌شوند.

@@ -1,0 +1,77 @@
+name: Pengu image
+
+# Builds the panel image of the Pengu fork and pushes it to GHCR:
+#   tag v5.6.0-pengu.1  ->  ghcr.io/<owner>/pasarguard-panel:v5.6.0-pengu.1 (+ :pengu-latest)
+#   manual run on a branch  ->  ...:test-<branch>-<sha>  (for a staging test, never :pengu-latest)
+
+on:
+    push:
+        tags: ["v*-pengu.*"]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    packages: write
+
+jobs:
+    image:
+        runs-on: ubuntu-24.04
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+
+            - name: Install dashboard dependencies
+              working-directory: ./dashboard
+              run: bun install --frozen-lockfile
+
+            - name: Build dashboard
+              run: ./build_dashboard.sh
+
+            - name: Image name and tags
+              id: meta
+              run: |
+                  image="ghcr.io/${GITHUB_REPOSITORY,,}"
+                  if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+                      tags="$image:$GITHUB_REF_NAME"$'\n'"$image:pengu-latest"
+                      version="$GITHUB_REF_NAME"
+                  else
+                      branch=$(echo "$GITHUB_REF_NAME" | tr -c 'a-zA-Z0-9.\n' '-')
+                      version="test-${branch}-${GITHUB_SHA::8}"
+                      tags="$image:$version"
+                  fi
+                  {
+                      echo "version=$version"
+                      echo "tags<<EOF"
+                      echo "$tags"
+                      echo "EOF"
+                  } >> "$GITHUB_OUTPUT"
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v4
+
+            - name: Login to GitHub Container Registry
+              uses: docker/login-action@v4.7.0
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.repository_owner }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Build and push
+              uses: docker/build-push-action@v7
+              with:
+                  context: .
+                  platforms: linux/amd64
+                  push: true
+                  file: ./Dockerfile
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: |
+                      org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+                      org.opencontainers.image.revision=${{ github.sha }}
+                      org.opencontainers.image.source=https://github.com/${{ github.repository }}
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max

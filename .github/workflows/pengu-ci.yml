@@ -1,0 +1,62 @@
+name: Pengu CI
+
+# Checks for the Pengu fork that the upstream workflows do not cover on our branches.
+# The full upstream test suite (every database) runs from test-database-migrations.yml.
+
+on:
+    push:
+        branches: [pengu, "feat/**", "fix/**", "sync/**"]
+    pull_request:
+        branches: [pengu]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    ruff:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-python@v7
+              with:
+                  python-version: "3.14"
+            - name: Install Ruff
+              run: pip install ruff
+            - name: Lint
+              run: ruff check --output-format=github .
+            - name: Format (fork-owned files)
+              run: |
+                  files=$(ls app/core/host_preferences.py tests/test_host_preferences.py 2> /dev/null || true)
+                  if [ -n "$files" ]; then ruff format --check $files; fi
+
+    migrations:
+        # start.sh runs `alembic upgrade head`, which refuses to start with two heads.
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-python@v7
+              with:
+                  python-version: "3.14"
+            - name: Install dependencies
+              run: make setup-test
+            - name: Exactly one migration head
+              run: |
+                  uv run alembic heads | tee heads.txt
+                  test "$(grep -c . heads.txt)" -eq 1
+
+    dashboard:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+            - name: Install dependencies
+              working-directory: ./dashboard
+              run: bun install --frozen-lockfile
+            - name: Type check
+              working-directory: ./dashboard
+              run: bun run typecheck
+            - name: Build
+              run: ./build_dashboard.sh

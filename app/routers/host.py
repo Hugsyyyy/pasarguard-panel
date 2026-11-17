@@ -95,9 +95,7 @@ async def _personalizable_hosts(db: AsyncSession, admin: AdminDetails) -> tuple[
     allowed_group_ids = access.allowed_group_ids if access else None
     if allowed_group_ids is not None:
         tags = set(
-            await db.scalars(
-                select(ProxyInbound.tag).join(ProxyInbound.groups).where(Group.id.in_(allowed_group_ids))
-            )
+            await db.scalars(select(ProxyInbound.tag).join(ProxyInbound.groups).where(Group.id.in_(allowed_group_ids)))
         )
         hosts = [host for host in hosts if host.inbound_tag in tags]
     return all_hosts, hosts

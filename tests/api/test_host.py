@@ -176,7 +176,6 @@ def test_operator_can_save_private_host_preferences(access_token):
         delete_admin(access_token, operator["username"])
 
 
-
 def test_operator_order_follows_the_owner_until_changed(access_token):
     """Saving without reordering stores no positions, so the owner's later reordering still applies;
     a reset clears everything, and a stale host list is refused with 409."""

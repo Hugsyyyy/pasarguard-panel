@@ -36,7 +36,18 @@ jobs:
                   if [ -z "$files" ]; then echo "no Python changes"; exit 0; fi
                   echo "$files"
                   uv run ruff check --output-format=github $files
-                  uv run ruff format --check $files
+                  # Format only files whose upstream version is formatted: reformatting upstream code
+                  # would only make the next upstream merges conflict.
+                  check=""
+                  for f in $files; do
+                      if git cat-file -e "$base:$f" 2> /dev/null &&
+                          ! git show "$base:$f" | uv run ruff format --check --stdin-filename "$f" > /dev/null 2>&1; then
+                          echo "skip format check: $f (not formatted upstream)"
+                          continue
+                      fi
+                      check="$check $f"
+                  done
+                  if [ -n "$check" ]; then uv run ruff format --check $check; fi
 
     migrations:
         # start.sh runs `alembic upgrade head`, which refuses to start with two heads.

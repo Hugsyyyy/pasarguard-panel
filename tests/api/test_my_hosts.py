@@ -5,6 +5,7 @@ import asyncio
 import pytest
 from fastapi import status
 from pydantic import ValidationError
+from sqlalchemy import select
 
 from app.db.models import Admin
 from app.models.admin import hash_password
@@ -275,6 +276,19 @@ def _create_owner_admin() -> dict:
     return {"username": username, "password": password}
 
 
+def _delete_admin_row(username: str) -> None:
+    """Owners cannot be deleted through the API; remove the test owner (and its keys) directly."""
+
+    async def _delete() -> None:
+        async with TestSession() as session:
+            admin = (await session.execute(select(Admin).where(Admin.username == username))).scalar_one_or_none()
+            if admin is not None:
+                await session.delete(admin)
+                await session.commit()
+
+    asyncio.run(_delete())
+
+
 def test_api_keys_with_their_own_permissions_cannot_use_my_hosts(access_token):
     """A narrow key (here the owner's) must never be able to hide hosts for anyone."""
     owner = _create_owner_admin()
@@ -303,7 +317,7 @@ def test_api_keys_with_their_own_permissions_cannot_use_my_hosts(access_token):
         assert client.get("/api/hosts/preferences", headers=owner_headers).status_code == status.HTTP_403_FORBIDDEN
         client.delete(f"/api/api_key/{key['id']}", headers=owner_headers)
     finally:
-        delete_admin(access_token, owner["username"])
+        _delete_admin_row(owner["username"])
 
 
 def test_host_preference_remark_follows_host_format_rules():

@@ -1,11 +1,15 @@
 """API tests of "My Hosts" (Pengu fork): operators personalize host names, order and visibility."""
 
+import asyncio
+
 import pytest
 from fastapi import status
 from pydantic import ValidationError
 
+from app.db.models import Admin
+from app.models.admin import hash_password
 from app.routers.host_preferences import HostPreferenceUpdate
-from tests.api import client
+from tests.api import TestSession, client
 from tests.api.helpers import (
     auth_headers,
     create_admin,
@@ -13,6 +17,7 @@ from tests.api.helpers import (
     delete_admin,
     delete_core,
     get_inbounds,
+    strong_password,
     unique_name,
 )
 
@@ -256,26 +261,49 @@ def test_custom_order_resets_and_owner_view(access_token):
         delete_core(access_token, core["id"])
 
 
+def _create_owner_admin() -> dict:
+    """A real owner account (env admins cannot create API keys), as upstream's API key tests do."""
+    username = unique_name("my_hosts_owner")
+    password = strong_password("MyHostsOwner")
+
+    async def _create() -> None:
+        async with TestSession() as session:
+            session.add(Admin(username=username, hashed_password=await hash_password(password), role_id=1))
+            await session.commit()
+
+    asyncio.run(_create())
+    return {"username": username, "password": password}
+
+
 def test_api_keys_with_their_own_permissions_cannot_use_my_hosts(access_token):
     """A narrow key (here the owner's) must never be able to hide hosts for anyone."""
-    response = client.post(
-        "/api/api_key",
-        headers=auth_headers(access_token),
-        json={
-            "name": unique_name("my_hosts_key"),
-            "inherit_permissions": False,
-            "permissions": {"users": {"read": {"scope": 2}}},
-        },
+    owner = _create_owner_admin()
+    login = client.post(
+        "/api/admin/token",
+        data={"username": owner["username"], "password": owner["password"], "grant_type": "password"},
     )
-    assert response.status_code == status.HTTP_201_CREATED, response.text
-    key = response.json()
-    headers = {"X-Api-Key": key["api_key"]}
+    owner_headers = auth_headers(login.json()["access_token"])
     try:
+        response = client.post(
+            "/api/api_key",
+            headers=owner_headers,
+            json={
+                "name": unique_name("my_hosts_key"),
+                "inherit_permissions": False,
+                "permissions": {"users": {"read": {"scope": 2}}},
+            },
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+        key = response.json()
+        headers = {"X-Api-Key": key["api_key"]}
         assert client.get("/api/hosts/preferences", headers=headers).status_code == status.HTTP_403_FORBIDDEN
         assert client.put("/api/hosts/preferences", headers=headers, json=[]).status_code == status.HTTP_403_FORBIDDEN
         assert client.delete("/api/hosts/preferences", headers=headers).status_code == status.HTTP_403_FORBIDDEN
+        # the owner's own login is refused too: My Hosts is for admins who cannot edit hosts
+        assert client.get("/api/hosts/preferences", headers=owner_headers).status_code == status.HTTP_403_FORBIDDEN
+        client.delete(f"/api/api_key/{key['id']}", headers=owner_headers)
     finally:
-        client.delete(f"/api/api_key/{key['id']}", headers=auth_headers(access_token))
+        delete_admin(access_token, owner["username"])
 
 
 def test_host_preference_remark_follows_host_format_rules():

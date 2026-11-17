@@ -45,4 +45,9 @@ routers = [
 for router in routers:
     api_router.include_router(router)
 
+# Pengu fork: My Hosts (kept in its own module so upstream changes to the list merge cleanly)
+from . import host_preferences
+
+api_router.include_router(host_preferences.router)
+
 __all__ = ["api_router"]

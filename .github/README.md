@@ -32,7 +32,7 @@
 ## نسخه‌ها و image
 
 - هر انتشار این فورک برچسب `vX.Y.Z-pengu.N` دارد؛ یعنی نسخهٔ رسمی `vX.Y.Z` به‌اضافهٔ تغییرهای ما.
-- image آمادهٔ Docker:
+- image آمادهٔ Docker (و برای هر نسخه یک «انتشار» در همین مخزن):
 
 ```text
 ghcr.io/hugsyyyy/pasarguard-panel:<برچسب>
@@ -41,9 +41,15 @@ ghcr.io/hugsyyyy/pasarguard-panel:pengu-latest
 
 ## نصب و به‌روزرسانی
 
-پنل را مثل نسخهٔ رسمی با [اسکریپت نصب پاسارگارد](https://github.com/PasarGuard/scripts) نصب کنید. بعد در `docker-compose.yml` جای `pasarguard/panel:latest` بنویسید `ghcr.io/hugsyyyy/pasarguard-panel:<برچسب>` و پنل را ری‌استارت کنید. مهاجرت‌های پایگاه داده خودکار اجرا می‌شوند.
+پنل را مثل نسخهٔ رسمی با [اسکریپت نصب پاسارگارد](https://github.com/PasarGuard/scripts) نصب کنید. بعد در `/opt/pasarguard/docker-compose.yml` جای `pasarguard/panel:latest` بنویسید:
 
-> ⚠️ روی پنلی که این image را دارد **`pasarguard update` نزنید**؛ آن دستور image رسمی را برمی‌گرداند که تغییرهای پایگاه دادهٔ این فورک را نمی‌شناسد. به‌روزرسانی فقط با برچسب تازهٔ همین فورک است.
+```text
+ghcr.io/hugsyyyy/pasarguard-panel:pengu-latest
+```
+
+و `pasarguard update` بزنید. از آن به بعد همین دستور **از این مخزن به‌روز می‌کند**: هر بار آخرین انتشار این فورک را می‌کشد و پنل را ری‌استارت می‌کند؛ مهاجرت‌های پایگاه داده هم خودکار اجرا می‌شوند. بخش نسخهٔ داشبورد هم انتشارهای همین مخزن را نشان می‌دهد.
+
+> `pasarguard install` (نصب از نو) image را به نسخهٔ رسمی برمی‌گرداند؛ بعد از آن همان یک خط را دوباره عوض کنید.
 
 راهنمای کامل نصب، برگشت به نسخهٔ رسمی و قاعدهٔ مهاجرت‌ها: [PENGU.md](../PENGU.md)
 

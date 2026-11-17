@@ -1,8 +1,10 @@
 name: Pengu image
 
-# Builds the panel image of the Pengu fork and pushes it to GHCR:
-#   tag v5.6.0-pengu.1  ->  ghcr.io/<owner>/pasarguard-panel:v5.6.0-pengu.1 (+ :pengu-latest)
-#   manual run on a branch  ->  ...:test-<branch>-<sha>  (for a staging test, never :pengu-latest)
+# Builds the panel image of the Pengu fork and pushes it to GHCR.
+#   tag v5.6.0-pengu.1  ->  ghcr.io/<owner>/pasarguard-panel:v5.6.0-pengu.1, :pengu-latest (only for the
+#                           highest -pengu tag), and a GitHub release, which the dashboard's version
+#                           check and `pasarguard update` (compose image :pengu-latest) follow.
+#   manual run on a branch  ->  ...:test-<branch>-<sha> (for a staging test; no release, never :pengu-latest)
 
 on:
     push:
@@ -10,7 +12,7 @@ on:
     workflow_dispatch:
 
 permissions:
-    contents: read
+    contents: write
     packages: write
 
 jobs:
@@ -19,6 +21,43 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0
+
+            - name: Version, image tags and release
+              id: meta
+              run: |
+                  image="ghcr.io/${GITHUB_REPOSITORY,,}"
+                  base=$(sed -nE 's/^__version__ = "([^"]+)".*/\1/p' app/version.py)
+                  if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+                      version="${GITHUB_REF_NAME#v}"
+                      tags="$image:$GITHUB_REF_NAME"
+                      highest=$(git tag --list 'v*-pengu.*' --sort=-v:refname | head -n 1)
+                      latest=false
+                      if [ "$GITHUB_REF_NAME" = "$highest" ]; then
+                          tags="$tags"$'\n'"$image:pengu-latest"
+                          latest=true
+                      fi
+                  else
+                      branch=$(echo "$GITHUB_REF_NAME" | tr -c 'a-zA-Z0-9.\n' '-')
+                      version="${base}-pengu.0"
+                      tags="$image:test-${branch}-${GITHUB_SHA::8}"
+                      latest=false
+                  fi
+                  {
+                      echo "base=$base"
+                      echo "version=$version"
+                      echo "latest=$latest"
+                      echo "tags<<EOF"
+                      echo "$tags"
+                      echo "EOF"
+                  } >> "$GITHUB_OUTPUT"
+                  echo "base $base -> version $version (pengu-latest: $latest)"
+
+            - name: Stamp the version into the image
+              env:
+                  VERSION: ${{ steps.meta.outputs.version }}
+              run: printf '__version__ = "%s"\n' "$VERSION" > app/version.py
 
             - name: Setup Bun
               uses: oven-sh/setup-bun@v2
@@ -31,25 +70,6 @@ jobs:
 
             - name: Build dashboard
               run: ./build_dashboard.sh
-
-            - name: Image name and tags
-              id: meta
-              run: |
-                  image="ghcr.io/${GITHUB_REPOSITORY,,}"
-                  if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-                      tags="$image:$GITHUB_REF_NAME"$'\n'"$image:pengu-latest"
-                      version="$GITHUB_REF_NAME"
-                  else
-                      branch=$(echo "$GITHUB_REF_NAME" | tr -c 'a-zA-Z0-9.\n' '-')
-                      version="test-${branch}-${GITHUB_SHA::8}"
-                      tags="$image:$version"
-                  fi
-                  {
-                      echo "version=$version"
-                      echo "tags<<EOF"
-                      echo "$tags"
-                      echo "EOF"
-                  } >> "$GITHUB_OUTPUT"
 
             - name: Set up Docker Buildx
               uses: docker/setup-buildx-action@v4
@@ -75,3 +95,20 @@ jobs:
                       org.opencontainers.image.source=https://github.com/${{ github.repository }}
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
+
+            - name: GitHub release
+              if: github.ref_type == 'tag'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  TAG: ${{ github.ref_name }}
+                  BASE: ${{ steps.meta.outputs.base }}
+                  LATEST: ${{ steps.meta.outputs.latest }}
+              run: |
+                  image="ghcr.io/${GITHUB_REPOSITORY,,}:$TAG"
+                  notes=$(printf 'PasarGuard [v%s](https://github.com/PasarGuard/panel/releases/tag/v%s) with the Pengu fork changes (see [PENGU.md](https://github.com/%s/blob/%s/PENGU.md)).\n\nImage: `%s`\n\nPanels whose compose image is `ghcr.io/%s:pengu-latest` get it with `pasarguard update`.' \
+                      "$BASE" "$BASE" "$GITHUB_REPOSITORY" "$TAG" "$image" "${GITHUB_REPOSITORY,,}")
+                  if gh release view "$TAG" > /dev/null 2>&1; then
+                      echo "release $TAG already exists"
+                  else
+                      gh release create "$TAG" --verify-tag --title "$TAG" --notes "$notes" --latest="$LATEST"
+                  fi

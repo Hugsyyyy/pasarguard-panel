@@ -18,7 +18,7 @@ import useDirDetection from '@/hooks/use-dir-detection'
 import { useSystemVersion } from '@/hooks/use-system-version'
 import { useVersionCheck } from '@/hooks/use-version-check'
 import { cn } from '@/lib/utils'
-import { canReadResourcePage, hasPermission, hasScopeAll, isOwner } from '@/utils/rbac'
+import { canPersonalizeHosts, canReadResourcePage, hasPermission, hasScopeAll, isOwner } from '@/utils/rbac'
 import {
   ArrowUpDown,
   Bell,
@@ -66,6 +66,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { admin } = useAdmin()
   const canReadSystem = hasPermission(admin, 'system', 'read')
   const canReadHosts = canReadResourcePage(admin, 'hosts')
+  const canCustomizeHosts = canPersonalizeHosts(admin)
   const canReadGroups = canReadResourcePage(admin, 'groups')
   const canReadAdmins = canReadResourcePage(admin, 'admins')
   const canReadApiKeys = canReadResourcePage(admin, 'api_keys')
@@ -136,6 +137,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { resolvedTheme } = useTheme()
   const [showCollapseButton, setShowCollapseButton] = useState(false)
   const normalizedVersion = canReadSystem && systemVersion ? systemVersion.replace(/[^0-9.]/g, '') : null
+  // Pengu fork: show the full version (5.6.0-pengu.1); use-version-check normalizes it for the comparison
+  const badgeVersion = canReadSystem && systemVersion ? systemVersion : null
   const displayVersion = canReadSystem && systemVersion ? `(v${systemVersion})` : ''
   const { hasUpdate } = useVersionCheck(normalizedVersion, { enabled: canReadSystem })
   const touchStartX = useRef<number | null>(null)
@@ -228,6 +231,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               icon: ListTodo,
             },
           ]
+        : []),
+      ...(canCustomizeHosts
+        ? [{ title: 'hostPreferences.title', url: '/host-preferences', icon: ListTodo }]
         : []),
       ...(canReadGroups
         ? [
@@ -443,7 +449,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   {canReadSystem && (
                     <div className="pointer-events-none absolute inset-0 z-30">
                       <div className="relative h-full w-full">
-                        <VersionBadge currentVersion={normalizedVersion} />
+                        <VersionBadge currentVersion={badgeVersion} />
                       </div>
                     </div>
                   )}
@@ -461,7 +467,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       />
                       {canReadSystem && hasUpdate && (
                         <TooltipProvider>
-                          <VersionBadge currentVersion={normalizedVersion} />
+                          <VersionBadge currentVersion={badgeVersion} />
                         </TooltipProvider>
                       )}
                     </a>
@@ -480,7 +486,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         >
                           <ChevronsRight className={cn('h-5 w-5 flex-shrink-0', isRTL && 'scale-x-[-1]')} />
                           <span className="sr-only">Expand Sidebar</span>
-                          {canReadSystem && hasUpdate && <VersionBadge currentVersion={normalizedVersion} />}
+                          {canReadSystem && hasUpdate && <VersionBadge currentVersion={badgeVersion} />}
                         </SidebarMenuButton>
                       </TooltipTrigger>
                       <TooltipContent side={isRTL ? 'left' : 'right'}>
@@ -505,7 +511,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                             <span className="max-w-full truncate text-xs leading-none opacity-45">{displayVersion}</span>
                             <div className="max-w-full">
                               <TooltipProvider>
-                                <VersionBadge currentVersion={normalizedVersion} className="leading-none" />
+                                <VersionBadge currentVersion={badgeVersion} className="leading-none" />
                               </TooltipProvider>
                             </div>
                           </div>
@@ -554,7 +560,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                           <span className="max-w-full truncate text-xs leading-none opacity-45">{displayVersion}</span>
                           <div className="max-w-full">
                             <TooltipProvider>
-                              <VersionBadge currentVersion={normalizedVersion} className="leading-none" />
+                              <VersionBadge currentVersion={badgeVersion} className="leading-none" />
                             </TooltipProvider>
                           </div>
                         </div>

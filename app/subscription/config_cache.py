@@ -13,6 +13,8 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from app.core.host_preferences import preferences_cache_key
+
 SUB_CONFIG_CACHE_TTL_S = 15
 SUB_CONFIG_CACHE_MAX = 4096
 
@@ -33,6 +35,7 @@ def make_sub_config_key(
     status = getattr(user, "status", None)
     status_key = status.value if hasattr(status, "value") else status
     inbounds = getattr(user, "inbounds", None) or ()
+    host_preferences_key = preferences_cache_key(getattr(getattr(user, "admin", None), "host_preferences", None))
     proxy_settings = getattr(user, "proxy_settings", None)
     if config_format == "wireguard" and proxy_settings is not None and hasattr(proxy_settings, "model_dump_json"):
         proxy_key = proxy_settings.model_dump_json()
@@ -49,6 +52,7 @@ def make_sub_config_key(
         getattr(user, "used_traffic", None) if config_format == "wireguard" else None,
         expire_key,
         tuple(inbounds),
+        host_preferences_key,
         proxy_key,
     )
 

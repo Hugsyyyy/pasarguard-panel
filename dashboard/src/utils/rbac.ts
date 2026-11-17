@@ -34,6 +34,18 @@ export const hasScopeAll = (admin: AdminDetails | null | undefined, resource: st
 }
 
 /**
+ * "My Hosts": admins who can neither create nor edit the shared hosts personalize them for their
+ * own users. Same rule as the API (by permissions, not the role's name).
+ */
+export const canPersonalizeHosts = (admin: AdminDetails | null | undefined) => {
+  if (!admin || isOwner(admin)) return false
+  return ['create', 'update'].every(action => {
+    const value = getActionPermission(admin, 'hosts', action)
+    return !value || isScopeNone(value)
+  })
+}
+
+/**
  * Full dashboard pages are exposed by the resource `read` permission only.
  * Simple read permissions are reserved for selector/dropdown endpoints and do
  * not grant page access.
@@ -73,6 +85,7 @@ export const canAccessRoute = (admin: AdminDetails | null | undefined, pathname:
   if (pathname.startsWith('/theme') || pathname.startsWith('/settings/theme')) return true
   if (pathname.startsWith('/users')) return hasPermission(admin, 'users', 'read')
   if (pathname.startsWith('/statistics')) return hasPermission(admin, 'nodes', 'stats')
+  if (pathname.startsWith('/host-preferences')) return canPersonalizeHosts(admin)
   if (pathname.startsWith('/hosts')) return canReadResourcePage(admin, 'hosts')
   if (pathname.startsWith('/groups')) return canReadResourcePage(admin, 'groups')
   if (pathname === '/templates') return canReadResourcePage(admin, 'templates') || canReadResourcePage(admin, 'client_templates')

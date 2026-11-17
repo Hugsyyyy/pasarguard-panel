@@ -90,6 +90,8 @@ class AdminBase(BaseModel):
 class AdminContactInfo(AdminBase):
     """Base model containing the core admin identification fields."""
 
+    # Pengu fork, "My Hosts": this admin's personal host names, order and visibility (never serialized).
+    host_preferences: object = Field(default=None, exclude=True)
     telegram_id: int | None = None
     discord_webhook: str | None = None
     sub_domain: str | None = None

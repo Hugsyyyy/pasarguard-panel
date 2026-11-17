@@ -3,6 +3,8 @@ name: Pengu upstream sync
 # Once a day: if PasarGuard published a release that is not in `pengu` yet, merge it into a
 # `sync/<tag>` branch, join the migration heads, open a pull request and run the tests on it.
 # A merge conflict opens an issue instead. Nothing is deployed from here.
+# Conditions compare with 'new'/'yes': a skipped step's output is null, and in Actions
+# expressions null == '0' is true (both become the number 0).
 
 on:
     schedule:
@@ -70,7 +72,7 @@ jobs:
                   git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
                   git checkout -b "sync/$TAG"
                   if git merge --no-ff --no-edit -m "Merge upstream $TAG" "$TAG"; then
-                      echo "conflict=0" >> "$GITHUB_OUTPUT"
+                      echo "merged=yes" >> "$GITHUB_OUTPUT"
                       exit 0
                   fi
                   files=$(git diff --name-only --diff-filter=U)
@@ -78,15 +80,15 @@ jobs:
                   body=$(printf 'Merging upstream `%s` into `pengu` conflicts in:\n\n%s\n\nMerge it by hand on a `sync/%s` branch (see PENGU.md).' \
                       "$TAG" "$(echo "$files" | sed 's/^/- `/; s/$/`/')" "$TAG")
                   gh issue create --title "Upstream $TAG needs a manual merge" --body "$body"
-                  echo "conflict=1" >> "$GITHUB_OUTPUT"
+                  echo "merged=no" >> "$GITHUB_OUTPUT"
 
             - uses: actions/setup-python@v7
-              if: steps.merge.outputs.conflict == '0'
+              if: steps.find.outputs.state == 'new' && steps.merge.outputs.merged == 'yes'
               with:
                   python-version: "3.14"
 
             - name: Join migration heads
-              if: steps.merge.outputs.conflict == '0'
+              if: steps.find.outputs.state == 'new' && steps.merge.outputs.merged == 'yes'
               env:
                   TAG: ${{ steps.find.outputs.tag }}
               run: |
@@ -101,7 +103,7 @@ jobs:
                   rm -f heads.txt
 
             - name: Push, open the pull request and run the tests
-              if: steps.merge.outputs.conflict == '0'
+              if: steps.find.outputs.state == 'new' && steps.merge.outputs.merged == 'yes'
               env:
                   TAG: ${{ steps.find.outputs.tag }}
               run: |

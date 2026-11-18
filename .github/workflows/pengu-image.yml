@@ -96,7 +96,7 @@ jobs:
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
 
-            - name: GitHub release
+            - name: GitHub release (with patch notes)
               if: github.ref_type == 'tag'
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -104,11 +104,49 @@ jobs:
                   BASE: ${{ steps.meta.outputs.base }}
                   LATEST: ${{ steps.meta.outputs.latest }}
               run: |
-                  image="ghcr.io/${GITHUB_REPOSITORY,,}:$TAG"
-                  notes=$(printf 'PasarGuard [v%s](https://github.com/PasarGuard/panel/releases/tag/v%s) with the Pengu fork changes (see [PENGU.md](https://github.com/%s/blob/%s/PENGU.md)).\n\nImage: `%s`\n\nPanels whose compose image is `ghcr.io/%s:pengu-latest` get it with `pasarguard update`.' \
-                      "$BASE" "$BASE" "$GITHUB_REPOSITORY" "$TAG" "$image" "${GITHUB_REPOSITORY,,}")
+                  repo="$GITHUB_REPOSITORY"
+                  image="ghcr.io/${repo,,}"
+                  # previous release of this fork (by version), else the upstream base tag
+                  prev=$(git tag --list 'v*-pengu.*' --sort=-v:refname | grep -vxF "$TAG" | head -n 1)
+                  since="${prev:-v$BASE}"
+                  prev_base=$(git show "$since:app/version.py" 2>/dev/null | sed -nE 's/^__version__ = "([^"]+)".*/\1/p')
+                  if git diff --quiet "$since" "$TAG" -- app/db/migrations/versions; then
+                      db="این نسخه **پایگاه داده را تغییر نمی‌دهد**."
+                  else
+                      db="این نسخه **پایگاه داده را تغییر می‌دهد**؛ مهاجرت‌ها موقع بالا آمدن پنل خودکار اجرا می‌شوند. پیش از به‌روزرسانی پشتیبان بگیرید."
+                  fi
+                  if [ -n "$prev_base" ] && [ "$prev_base" != "$BASE" ]; then
+                      upstream="پایه از PasarGuard v$prev_base به [v$BASE](https://github.com/PasarGuard/panel/releases/tag/v$BASE) به‌روز شد؛ تغییرهای رسمی را در یادداشت‌های همان نسخه ببینید."
+                  else
+                      upstream="پایه: PasarGuard [v$BASE](https://github.com/PasarGuard/panel/releases/tag/v$BASE)."
+                  fi
+                  changes=$(gh api "repos/$repo/releases/generate-notes" -f tag_name="$TAG" -f previous_tag_name="$since" --jq .body 2>/dev/null || true)
+                  {
+                      echo '<div dir="rtl">'
+                      echo
+                      echo '## پیش از به‌روزرسانی بدانید'
+                      echo
+                      echo "- $db"
+                      echo "- $upstream"
+                      echo
+                      echo '## به‌روزرسانی'
+                      echo
+                      echo "پنل‌هایی که image آن‌ها در compose \`$image:pengu-latest\` است: \`pasarguard update\`، یا فقط خود پنل:"
+                      echo
+                      echo '```sh'
+                      echo 'cd /opt/pasarguard && docker compose pull pasarguard && docker compose up -d --no-deps pasarguard'
+                      echo '```'
+                      echo
+                      echo '</div>'
+                      echo
+                      echo '---'
+                      echo
+                      echo "${changes:-**Full changelog:** https://github.com/$repo/compare/$since...$TAG}"
+                      echo
+                      echo "**Image:** \`$image:$TAG\`"
+                  } > notes.md
                   if gh release view "$TAG" > /dev/null 2>&1; then
                       echo "release $TAG already exists"
                   else
-                      gh release create "$TAG" --verify-tag --title "$TAG" --notes "$notes" --latest="$LATEST"
+                      gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md --latest="$LATEST"
                   fi

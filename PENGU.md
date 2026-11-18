@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # فورک پنگو از پاسارگارد
 
 این مخزن فورک پنل [PasarGuard](https://github.com/PasarGuard/panel) برای پنل پنگو است. پایه‌اش آخرین نسخهٔ رسمی است و چند قابلیت خودمان رویش آمده. مجوز همان `AGPL-3.0` است، پس این مخزن عمومی می‌ماند.
@@ -6,7 +8,7 @@
 
 ### هاست‌های من (My Hosts)
 
-نماینده‌ها (ادمین‌هایی که اجازهٔ ساخت یا ویرایش هاست ندارند) اسم، ترتیب و نمایش سرورها را فقط برای کاربران خودشان عوض می‌کنند. هاست‌های اصلی پنل دست نمی‌خورند.
+نماینده‌ها (ادمین‌هایی که اجازهٔ ساخت یا ویرایش هاست ندارند) نام، ترتیب و نمایش سرورها را فقط برای کاربران خودشان عوض می‌کنند. هاست‌های اصلی پنل دست نمی‌خورند.
 
 - پایه: درخواست ادغام [#1185](https://github.com/PasarGuard/panel/pull/1185) که تیم پاسارگارد نپذیرفت. ما بازبینی و اصلاحش کردیم.
 - رفتار:
@@ -14,7 +16,12 @@
   - اگر ترتیب خودش را بگذارد، سرورهایی که بعداً به پنل اضافه می‌شوند ته فهرستش، به ترتیب پنل، می‌آیند.
   - هر نماینده فقط هاست‌های گروه‌هایی را می‌بیند که نقشش اجازه دارد.
   - کلیدهای API با مجوز سفارشی راهی به این قابلیت ندارند؛ دسترسی از نقش واقعی ادمین سنجیده می‌شود.
-- API:
+- دسترسی برای هر نقش:
+  - هر نقش گزینهٔ `features.can_use_my_hosts` دارد. در داشبورد: «نقش‌های مدیر ← ویرایش نقش ← قابلیت‌ها ← استفاده از هاست‌های من». پیش‌فرضش روشن است.
+  - قاعده در `role_allows_my_hosts` است: نقش مالک نباشد، این گزینه خاموش نباشد، و `hosts.create` یا `hosts.update` نداشته باشد. API، داشبورد و اشتراک‌ها همه از همین قاعده پیروی می‌کنند.
+  - اگر گزینه خاموش شود، تنظیمات ذخیره‌شده می‌مانند ولی به اشتراک‌ها نمی‌رسند (در `SubscriptionOperation.validated_user`)، و با روشن شدن دوباره برمی‌گردند.
+  - نسخهٔ رسمی این کلید اضافه را نادیده می‌گیرد، پس برگشت به نسخهٔ رسمی با آن مشکلی ندارد.
+- مسیرهای API:
   - نماینده: `GET` و `PUT` و `DELETE` روی `/api/hosts/preferences` (`DELETE` یعنی بازنشانی کامل).
   - مالک: `GET` و `DELETE` روی `/api/admin/by-username/{username}/host-preferences` برای دیدن و پاک کردن تنظیمات هر ادمین؛ مثلاً بعد از عوض شدن نقش یک نماینده، که دیگر خودش به صفحه دسترسی ندارد.
 - کد: `app/core/host_preferences.py` (منطق)، `app/routers/host_preferences.py` (API)، صفحهٔ `dashboard/src/pages/_dashboard.host-preferences.tsx`. آزمون‌ها در فایل‌های جدای `tests/test_host_preferences.py`، `tests/test_my_hosts_subscription.py` و `tests/api/test_my_hosts.py`.
@@ -23,7 +30,7 @@
 ### نسخه و به‌روزرسانی
 
 - هر انتشار ما برچسب `vX.Y.Z-pengu.N` دارد: نسخهٔ رسمی `vX.Y.Z` به‌اضافهٔ تغییرهای ما.
-- workflow ساخت image همین نسخه را در `app/version.py` می‌نویسد، image را با همین برچسب (و `pengu-latest` اگر بالاترین نسخه باشد) منتشر می‌کند و یک «انتشار» گیت‌هاب می‌سازد.
+- همان workflow ساخت image نسخه را در `app/version.py` می‌نویسد، image را با همین برچسب (و `pengu-latest` اگر بالاترین نسخه باشد) منتشر می‌کند و یک «انتشار» گیت‌هاب با یادداشت تغییرها می‌سازد.
 - بخش نسخهٔ داشبورد انتشارهای همین مخزن را چک می‌کند و اگر نسخهٔ تازه‌تری باشد نشان می‌دهد.
 
 ## شاخه‌ها
@@ -37,21 +44,26 @@
 
 ## به‌روزرسانی از نسخهٔ رسمی
 
-1. workflow «Pengu upstream sync» هر روز آخرین انتشار رسمی را چک می‌کند. اگر تازه باشد:
-   - شاخهٔ `sync/<نسخه>` را می‌سازد و نسخهٔ رسمی را در آن ادغام می‌کند.
-   - اگر دو «سر» مهاجرت پیدا شود، یک مهاجرت ادغام (`pengu_merge_...`) می‌سازد.
-   - درخواست ادغام به `pengu` باز می‌کند و همهٔ آزمون‌ها روی آن اجرا می‌شوند.
-   - اگر ادغام تداخل داشته باشد، یا (بدون `SYNC_TOKEN`) نسخهٔ رسمی فایل workflow عوض کرده باشد، یک issue باز می‌کند.
-2. وقتی آزمون‌ها سبز شدند، درخواست ادغام را merge کنید و برچسب `vX.Y.Z-pengu.1` بزنید. image و انتشار خودکار ساخته می‌شوند.
-3. روی پنل `pasarguard update` (پایین‌تر).
+**۱.** هر روز workflow «Pengu upstream sync» آخرین انتشار رسمی را چک می‌کند. اگر تازه باشد:
+
+- شاخهٔ `sync/vX.Y.Z` را می‌سازد و نسخهٔ رسمی را در آن ادغام می‌کند.
+- اگر دو «سر» مهاجرت پیدا شود، یک مهاجرت ادغام (`pengu_merge_...`) می‌سازد.
+- درخواست ادغام به `pengu` باز می‌کند و همهٔ آزمون‌ها روی آن اجرا می‌شوند.
+- اگر ادغام تداخل داشته باشد، یا (بدون `SYNC_TOKEN`) نسخهٔ رسمی فایل workflow عوض کرده باشد، یک issue باز می‌کند.
+
+**۲.** وقتی آزمون‌ها سبز شدند، درخواست ادغام را merge کنید و برچسب `vX.Y.Z-pengu.1` بزنید. image و انتشار خودکار ساخته می‌شوند.
+
+**۳.** روی پنل دستور `pasarguard update` را بزنید (پایین‌تر را ببینید).
 
 ### توکن همگام‌سازی (`SYNC_TOKEN`)
 
 گیت‌هاب نمی‌گذارد توکن پیش‌فرض workflow فایل‌های `.github/workflows/` را push کند، و نسخه‌های رسمی معمولاً این فایل‌ها را عوض می‌کنند. برای همگام‌سازی کاملاً خودکار:
 
-1. GitHub ← Settings ← Developer settings ← Fine-grained tokens ← Generate new token.
-2. Repository access: فقط `Hugsyyyy/pasarguard-panel`. Permissions: `Contents`، `Pull requests`، `Issues` و `Workflows` همه روی Read and write.
-3. در همین مخزن: Settings ← Secrets and variables ← Actions ← New repository secret با اسم `SYNC_TOKEN`.
+**۱.** در گیت‌هاب یک توکن تازه بسازید: `Settings > Developer settings > Fine-grained tokens > Generate new token`.
+
+**۲.** در بخش `Repository access` فقط `Hugsyyyy/pasarguard-panel` را بدهید. در `Permissions`، گزینه‌های `Contents`، `Pull requests`، `Issues` و `Workflows` همه روی `Read and write` باشند.
+
+**۳.** در همین مخزن توکن را با اسم `SYNC_TOKEN` ذخیره کنید: `Settings > Secrets and variables > Actions > New repository secret`.
 
 بدون این توکن هم همه‌چیز کار می‌کند، فقط انتشارهایی که workflow عوض کرده‌اند یک issue می‌سازند و باید دستی push شوند.
 
@@ -60,31 +72,53 @@
 ### قاعدهٔ مهاجرت‌ها (مهم)
 
 - **مهاجرتی را که روی پایگاه داده اجرا شده هیچ‌وقت جابه‌جا نکنید** (یعنی `down_revision`ش را عوض نکنید). اگر جابه‌جا شود، Alembic مهاجرت‌های رسمی تازه را اجراشده فرض می‌کند و از رویشان می‌پرد.
-- اگر بعد از ادغام دو «سر» باشد، فقط یک مهاجرت ادغام اضافه کنید: `uv run alembic merge heads --rev-id pengu_merge_<نسخه>`.
-- `start.sh` موقع بالا آمدن `alembic upgrade head` را اجرا می‌کند و با دو «سر» پنل بالا نمی‌آید؛ CI همین را چک می‌کند.
+- اگر بعد از ادغام دو «سر» باشد، فقط یک مهاجرت ادغام اضافه کنید: `uv run alembic merge heads --rev-id pengu_merge_<version>`.
+- فایل `start.sh` موقع بالا آمدن `alembic upgrade head` را اجرا می‌کند و با دو «سر» پنل بالا نمی‌آید؛ CI همین را چک می‌کند.
 
 ## نصب روی پنل
 
-1. پنل را مثل همیشه با نصاب رسمی پاسارگارد نصب کنید (یا روی پنل موجود ادامه دهید).
-2. پشتیبان رسمی بگیرید: `pasarguard backup`.
-3. در `/opt/pasarguard/docker-compose.yml`، جلوی سرویس `pasarguard` بنویسید:
-   `image: ghcr.io/hugsyyyy/pasarguard-panel:pengu-latest`
-4. فقط پنل را با image تازه بالا بیاورید: `cd /opt/pasarguard && docker compose pull pasarguard && docker compose up -d --no-deps pasarguard`. (`pasarguard update` هم کار می‌کند، ولی همهٔ imageها، از جمله پایگاه داده، را می‌کشد و همه را ری‌استارت می‌کند.)
+**۱.** پنل را مثل همیشه با نصاب رسمی پاسارگارد نصب کنید (یا روی پنل موجود ادامه دهید).
+
+**۲.** پشتیبان رسمی بگیرید:
+
+```sh
+pasarguard backup
+```
+
+**۳.** در `/opt/pasarguard/docker-compose.yml`، جلوی سرویس `pasarguard` بنویسید:
+
+```yaml
+image: ghcr.io/hugsyyyy/pasarguard-panel:pengu-latest
+```
+
+**۴.** فقط پنل را با image تازه بالا بیاورید:
+
+```sh
+cd /opt/pasarguard && docker compose pull pasarguard && docker compose up -d --no-deps pasarguard
+```
+
+دستور `pasarguard update` هم کار می‌کند، ولی همهٔ imageها، از جمله پایگاه داده، را می‌کشد و همه را ری‌استارت می‌کند.
 
 از این به بعد **`pasarguard update` از همین مخزن به‌روز می‌کند**: آخرین انتشار ما (`pengu-latest`) را می‌کشد و پنل را ری‌استارت می‌کند. مهاجرت‌های پایگاه داده خودکار اجرا می‌شوند.
 
-> `pasarguard install` (نصب از نو) image را به نسخهٔ رسمی برمی‌گرداند؛ بعد از آن قدم ۳ را تکرار کنید.
+> دستور `pasarguard install` (نصب از نو) image را به نسخهٔ رسمی برمی‌گرداند؛ بعد از آن قدم ۳ را تکرار کنید.
 
 ## برگشت به نسخهٔ رسمی
 
-پنل را خاموش کنید، با image همین فورک مهاجرت‌های ما را برگردانید تا جدول‌ها مثل نسخهٔ رسمی شوند، بعد image را عوض کنید:
+**۱.** پنل را خاموش کنید و با image همین فورک مهاجرت‌های ما را برگردانید تا جدول‌ها مثل نسخهٔ رسمی شوند. شناسهٔ آخرین مهاجرت نسخهٔ رسمی برای `v5.6.0` این است: `1a2b3c4d5e6f`.
 
 ```sh
 cd /opt/pasarguard
 docker compose stop pasarguard
-docker compose run --rm --no-deps --entrypoint python pasarguard -m alembic downgrade <آخرین مهاجرت نسخهٔ رسمی؛ برای 5.6.0: 1a2b3c4d5e6f>
-# خط image را به pasarguard/panel:<همان نسخه> برگردانید، بعد:
+docker compose run --rm --no-deps --entrypoint python pasarguard -m alembic downgrade 1a2b3c4d5e6f
+```
+
+**۲.** خط image را به همان نسخهٔ رسمی برگردانید (مثلاً `pasarguard/panel:v5.6.0`) و پنل را بالا بیاورید:
+
+```sh
 docker compose up -d --no-deps pasarguard
 ```
 
 با این کار تنظیمات «هاست‌های من» پاک می‌شوند.
+
+</div>

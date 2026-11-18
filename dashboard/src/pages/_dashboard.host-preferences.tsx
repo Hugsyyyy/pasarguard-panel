@@ -336,9 +336,16 @@ export default function HostPreferencesPage() {
                               style={{ fontFamily: 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif' }}
                               onChange={event => setHosts(current => current.map(item => (item.id === host.id ? { ...item, remark: event.target.value } : item)))}
                             />
-                            {customized && (
-                              <span className="text-muted-foreground truncate text-xs">{t('hostPreferences.originalName', { defaultValue: 'Original: {{name}}', name: host.default_remark })}</span>
-                            )}
+                            {/* Always show which shared host this card is, renamed or not */}
+                            <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs" title={host.default_remark}>
+                              <span className="shrink-0">{t('hostPreferences.originalLabel', { defaultValue: 'Original name' })}:</span>
+                              <bdi dir="auto" className="min-w-0 truncate">
+                                {host.default_remark}
+                              </bdi>
+                              {customized && (
+                                <span className="bg-primary/10 text-primary shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium">{t('hostPreferences.custom', { defaultValue: 'Custom' })}</span>
+                              )}
+                            </div>
                             {invalidRemark && <span className="text-destructive text-xs">{t('hostPreferences.remarkRequired', { defaultValue: 'A server name cannot be empty' })}</span>}
                           </div>
                           <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-2 border-t pt-2">

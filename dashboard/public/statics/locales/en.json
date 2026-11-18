@@ -4223,7 +4223,7 @@
   },
   "hostPreferences": {
     "title": "My Hosts",
-    "description": "Change the server names and order shown to you. These changes only affect your account.",
+    "description": "Change server names, order and visibility for your own users only. The panel's shared hosts are not changed.",
     "subscriptionNote": "Names, order, and enabled hosts are reflected in your users’ subscription links and copied configurations.",
     "save": "Save changes",
     "saved": "Host preferences saved",
@@ -4252,6 +4252,7 @@
     "forbidden": "Your account cannot change My Hosts right now.",
     "invalidRemark": "A server name is not valid. Check the variables in braces.",
     "limited": "Your account is limited, so changes cannot be saved right now.",
-    "loadFailed": "My Hosts is not available for your account."
+    "loadFailed": "My Hosts is not available for your account.",
+    "originalLabel": "Original name"
   }
 }

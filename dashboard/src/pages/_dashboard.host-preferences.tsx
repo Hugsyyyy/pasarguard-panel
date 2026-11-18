@@ -12,7 +12,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, Grip, RotateCcw, Save, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, Eye, EyeOff, Grip, RotateCcw, Save, Search } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -21,20 +21,22 @@ import { isLimited } from '@/utils/rbac'
 type HostPreference = { id: number; remark: string; default_remark: string; priority: number; default_priority: number; is_customized: boolean; enabled: boolean }
 type ResetConfirmation = 'order' | 'all' | null
 
-function SortableHostRow({ id, disabled, label, rowRef, children }: { id: number; disabled: boolean; label: string; rowRef: (element: HTMLDivElement | null) => void; children: (dragHandle: ReactNode) => ReactNode }) {
+function SortableHostRow({
+  id,
+  disabled,
+  label,
+  rowRef,
+  children,
+}: {
+  id: number
+  disabled: boolean
+  label: string
+  rowRef: (element: HTMLDivElement | null) => void
+  children: (dragHandle: ReactNode) => ReactNode
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled })
   const dragHandle = (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon"
-      className="h-8 w-8 shrink-0 touch-none"
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      {...attributes}
-      {...listeners}
-    >
+    <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0 touch-none" aria-label={label} title={label} disabled={disabled} {...attributes} {...listeners}>
       <Grip className="h-4 w-4" />
     </Button>
   )
@@ -286,7 +288,7 @@ export default function HostPreferencesPage() {
         <PageHeader title="hostPreferences.title" description="hostPreferences.description" titleAction={<VariablesPopover includeProtocolTransport side="bottom" align="end" />} />
         <div className="flex items-start gap-2 px-4 pb-3 lg:items-center">
           <p className="text-muted-foreground min-w-0 flex-1 text-sm">
-            {t('hostPreferences.subscriptionNote', { defaultValue: 'Names, order, and enabled hosts are reflected in subscription links and copied configurations for your users.' })}
+            {t('hostPreferences.subscriptionNote', { defaultValue: 'Names, order, and visible or hidden hosts are reflected in your users’ subscription links and copied configurations.' })}
           </p>
           {toolbar('hidden lg:flex lg:w-auto lg:shrink-0')}
         </div>
@@ -294,9 +296,7 @@ export default function HostPreferencesPage() {
       </div>
       <div className="w-full space-y-3 p-4">
         {toolbar('lg:hidden')}
-        {limited && (
-          <p className="text-muted-foreground text-sm">{t('hostPreferences.limited', { defaultValue: 'Your account is limited, so changes cannot be saved right now.' })}</p>
-        )}
+        {limited && <p className="text-muted-foreground text-sm">{t('hostPreferences.limited', { defaultValue: 'Your account is limited, so changes cannot be saved right now.' })}</p>}
         {isLoading ? (
           <p>{t('loading', { defaultValue: 'Loading...' })}</p>
         ) : isError ? (
@@ -307,7 +307,8 @@ export default function HostPreferencesPage() {
               <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 2xl:grid-cols-3">
                 {visibleHosts.map(host => {
                   const invalidRemark = !host.remark.trim()
-                  const customized = host.remark !== host.default_remark
+                  // Same rule as saving: a name equal to the original (ignoring outer spaces) is not custom
+                  const customized = host.remark.trim() !== host.default_remark.trim()
                   return (
                     <SortableHostRow
                       key={host.id}
@@ -330,6 +331,8 @@ export default function HostPreferencesPage() {
                               maxLength={256}
                               disabled={!host.enabled}
                               placeholder={host.default_remark}
+                              // Same direction rule as the original name below (and most client apps): from the first letter
+                              dir="auto"
                               isError={invalidRemark}
                               aria-invalid={invalidRemark}
                               onKeyDown={event => onRemarkKeyDown(event, host)}
@@ -377,14 +380,21 @@ export default function HostPreferencesPage() {
                               </Button>
                             </div>
                             <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
-                              <div className="flex items-center gap-1.5">
+                              {/* Say what the switch does: show this host to the reseller's users, or hide it */}
+                              <label
+                                className={cn('flex cursor-pointer items-center gap-1.5 text-xs font-medium select-none', host.enabled ? 'text-foreground' : 'text-muted-foreground')}
+                                title={t('hostPreferences.visibilityHint', { defaultValue: "When off, this server is left out of your users' subscriptions." })}
+                              >
+                                {host.enabled ? <Eye className="h-3.5 w-3.5 shrink-0" /> : <EyeOff className="h-3.5 w-3.5 shrink-0" />}
+                                <span className="whitespace-nowrap">
+                                  {host.enabled ? t('hostPreferences.shown', { defaultValue: 'Visible' }) : t('hostPreferences.hidden', { defaultValue: 'Hidden' })}
+                                </span>
                                 <Switch
                                   checked={host.enabled}
                                   onCheckedChange={enabled => setHosts(current => current.map(item => (item.id === host.id ? { ...item, enabled } : item)))}
-                                  aria-label={t('hostPreferences.enabled', { defaultValue: 'Host enabled' })}
-                                  title={t('hostPreferences.enabled', { defaultValue: 'Host enabled' })}
+                                  aria-label={t('hostPreferences.enabled', { defaultValue: 'Show to my users' })}
                                 />
-                              </div>
+                              </label>
                               {customized && (
                                 <Button
                                   type="button"
@@ -428,8 +438,8 @@ export default function HostPreferencesPage() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {resetConfirmation === 'all'
-                ? t('hostPreferences.resetAllConfirm', { defaultValue: 'Reset all custom host names, order, and enabled states?' })
-                : t('hostPreferences.resetOrderConfirm', { defaultValue: 'Restore the default host order? Custom names and enabled states will stay unchanged.' })}
+                ? t('hostPreferences.resetAllConfirm', { defaultValue: 'Reset all custom host names, order, and hidden hosts?' })
+                : t('hostPreferences.resetOrderConfirm', { defaultValue: 'Restore the default host order? Custom names and hidden hosts will stay unchanged.' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

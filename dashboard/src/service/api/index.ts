@@ -398,6 +398,8 @@ export const AdminStatus = {
 export interface RoleFeatures {
   can_use_reset_strategy?: boolean;
   can_use_next_plan?: boolean;
+  /** Pengu fork: "My Hosts" for this role's admins (default true) */
+  can_use_my_hosts?: boolean;
 }
 
 export interface RoleAccess {

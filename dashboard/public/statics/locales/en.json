@@ -1197,6 +1197,10 @@
       "can_use_next_plan": {
         "title": "Use next plan",
         "description": "Allow this role to configure auto-applied next plans."
+      },
+      "can_use_my_hosts": {
+        "title": "Use My Hosts",
+        "description": "Let this role's admins rename, reorder and hide servers for their own users. When off, the page is hidden and their changes stop applying. Roles that can create or edit hosts never get it."
       }
     }
   },

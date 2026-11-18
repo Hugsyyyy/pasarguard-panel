@@ -12,9 +12,15 @@ Stored in ``admins.host_preferences``::
   reorders. Without positions the users follow the shared order (and the owner's random order).
 - ``enabled`` False hides the host from that admin's users.
 
+Who may use it is decided by the admin's role (``role_allows_my_hosts``): the role's "My Hosts" feature
+is on (the default) and the role can neither create nor edit hosts. The saved preferences of an admin whose
+role does not allow it are kept but not applied, so switching the feature back on restores them.
+
 Malformed entries are ignored rather than trusted: a subscription must never fail because of them.
-Pure functions only (no app imports), so the subscription code can use them freely.
+No app imports, so the subscription code can use this module freely.
 """
+
+from sqlalchemy.exc import SQLAlchemyError
 
 
 def saved_hosts(host_preferences) -> dict[str, dict]:
@@ -109,3 +115,60 @@ def preferences_cache_key(host_preferences) -> tuple:
             for host_id, entry in saved_hosts(host_preferences).items()
         )
     )
+
+
+def _field(source, name: str):
+    """Read a key from a JSON dict (ORM role) or an attribute / dict-like model (API role)."""
+    if source is None:
+        return None
+    if isinstance(source, dict):
+        return source.get(name)
+    getter = getattr(source, "get", None)
+    if callable(getter):
+        return getter(name)
+    return getattr(source, name, None)
+
+
+def _grants(value) -> bool:
+    """Same rule as the permission checks: a truthy value whose scope (if any) is not NONE (0)."""
+    if not value:
+        return False
+    if isinstance(value, dict) and value.get("scope") is not None:
+        try:
+            return int(value["scope"]) != 0
+        except TypeError, ValueError:
+            return False
+    return True
+
+
+def role_allows_my_hosts(role) -> bool:
+    """Whether admins of this role may use My Hosts (and have their saved preferences applied).
+
+    Not the owner role, the role's "My Hosts" feature not switched off, and neither ``hosts.create`` nor
+    ``hosts.update`` granted. Works with the ORM role (JSON dicts) and with the API model. A missing role
+    keeps the old behaviour (allowed).
+    """
+    if role is None:
+        return True
+    if getattr(role, "is_owner", False):
+        return False
+    if _field(getattr(role, "features", None), "can_use_my_hosts") is False:
+        return False
+    hosts = _field(getattr(role, "permissions", None), "hosts")
+    return not (_grants(_field(hosts, "create")) or _grants(_field(hosts, "update")))
+
+
+async def drop_disallowed_preferences(db_user, user) -> None:
+    """Forget the admin's preferences on ``user`` (the response model) when their role does not allow
+    My Hosts. Nothing is changed in the database. The role is loaded only for admins with preferences
+    (the subscription endpoints have it loaded already); a detached admin keeps the old behaviour."""
+    admin = getattr(db_user, "admin", None)
+    admin_model = getattr(user, "admin", None)
+    if admin is None or admin_model is None or not getattr(admin_model, "host_preferences", None):
+        return
+    try:
+        role = await admin.awaitable_attrs.role
+    except SQLAlchemyError:
+        return
+    if not role_allows_my_hosts(role):
+        admin_model.host_preferences = None

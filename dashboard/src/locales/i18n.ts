@@ -25,6 +25,8 @@ i18n
       },
       backend: {
         loadPath: joinURL(import.meta.env.BASE_URL, `statics/locales/{{lng}}.json`),
+        // Pengu fork: a new build id per release, so an update never shows last release's cached texts
+        queryStringParams: { v: __PENGU_BUILD_ID__ },
       },
     },
     function (err) {

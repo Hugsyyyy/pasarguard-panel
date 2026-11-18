@@ -9,6 +9,9 @@ const shellJavaScript = new Set<string>()
 
 export default defineConfig({
   base: process.env.BASE_URL,
+  // Pengu fork: a new id on every build; the dashboard adds it to the translation URLs, so browsers
+  // fetch fresh texts right after an update (the panel serves them with max-age=3600)
+  define: { __PENGU_BUILD_ID__: JSON.stringify(Date.now().toString(36)) },
   clearScreen: false,
   server: {
     host: true,

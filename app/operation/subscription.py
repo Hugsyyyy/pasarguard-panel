@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 from fastapi import Response
 from fastapi.responses import HTMLResponse
 
+from app.core.host_preferences import drop_disallowed_preferences
 from app.db import AsyncSession
 from app.db.crud.hwid import get_user_hwid_by_value, register_user_hwid
 from app.db.crud.user import get_user_usages, user_sub_update
@@ -118,6 +119,8 @@ class SubscriptionOperation(BaseOperation):
     async def validated_user(db_user: User) -> UsersResponseWithInbounds:
         with phase("subscription.user_model"):
             user = UsersResponseWithInbounds.model_validate(db_user.__dict__)
+        # Pengu fork, "My Hosts": the admin's preferences apply only while their role allows My Hosts
+        await drop_disallowed_preferences(db_user, user)
         with phase("subscription.inbounds"):
             user.inbounds = await db_user.inbounds()
         user.expire = db_user.expire

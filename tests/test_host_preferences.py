@@ -1,14 +1,21 @@
 """Unit tests for app.core.host_preferences (operator "My Hosts", Pengu fork)."""
 
+import asyncio
+from types import SimpleNamespace
+
 from pydantic import BaseModel
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from app.core.host_preferences import (
+    drop_disallowed_preferences,
     has_custom_order,
     order_hosts,
     personalize_hosts,
     preferences_cache_key,
+    role_allows_my_hosts,
     saved_hosts,
 )
+from app.models.admin_role import RoleFeatures, RolePermissions
 
 
 class Host(BaseModel):
@@ -87,3 +94,60 @@ def test_cache_key_changes_with_every_visible_setting():
     assert len(keys) == 4
     assert preferences_cache_key(None) == preferences_cache_key({}) == preferences_cache_key("x") == ()
     assert saved_hosts({"hosts": {1: {"remark": "N"}}}) == {"1": {"remark": "N"}}
+
+
+def _role(features=None, permissions=None, is_owner=False):
+    """A role as the ORM gives it (JSON dicts)."""
+    return SimpleNamespace(is_owner=is_owner, features=features, permissions=permissions)
+
+
+def test_role_rule_for_my_hosts():
+    # the ORM role (JSON): a missing flag means on, as for roles saved before the flag existed
+    assert role_allows_my_hosts(None)
+    assert role_allows_my_hosts(_role({"can_use_next_plan": True}, {"users": {"read": {"scope": 1}}}))
+    assert not role_allows_my_hosts(_role({"can_use_my_hosts": False}))
+    assert not role_allows_my_hosts(_role(None, {"hosts": {"update": True}}))
+    assert not role_allows_my_hosts(_role(None, {"hosts": {"create": {"scope": 2}}}))
+    assert role_allows_my_hosts(_role(None, {"hosts": {"read": True, "update": {"scope": 0}}}))
+    assert not role_allows_my_hosts(_role({"can_use_my_hosts": True}, None, is_owner=True))
+    # the API role (models), as carried on AdminDetails
+    api = SimpleNamespace(is_owner=False, features=RoleFeatures(), permissions=RolePermissions())
+    assert role_allows_my_hosts(api)
+    api.features = RoleFeatures(can_use_my_hosts=False)
+    assert not role_allows_my_hosts(api)
+    api.features = RoleFeatures()
+    api.permissions = RolePermissions.model_validate({"hosts": {"read": True, "update": True}})
+    assert not role_allows_my_hosts(api)
+    assert RoleFeatures().can_use_my_hosts is True
+
+
+class _Attrs:
+    """Stands in for SQLAlchemy's ``awaitable_attrs`` of an admin."""
+
+    def __init__(self, role=None, error=None):
+        self._role, self._error = role, error
+
+    @property
+    def role(self):
+        async def load():
+            if self._error is not None:
+                raise self._error
+            return self._role
+
+        return load()
+
+
+def _applied_preferences(attrs):
+    preferences = {"hosts": {"1": {"enabled": False}}}
+    db_user = SimpleNamespace(admin=SimpleNamespace(awaitable_attrs=attrs))
+    user = SimpleNamespace(admin=SimpleNamespace(host_preferences=preferences))
+    asyncio.run(drop_disallowed_preferences(db_user, user))
+    return user.admin.host_preferences is preferences
+
+
+def test_saved_preferences_apply_only_while_the_role_allows_my_hosts():
+    assert _applied_preferences(_Attrs(_role({}, {})))
+    assert not _applied_preferences(_Attrs(_role({"can_use_my_hosts": False}, {})))
+    assert not _applied_preferences(_Attrs(_role({}, {"hosts": {"update": True}})))
+    # an admin object that can no longer load its role keeps the old behaviour
+    assert _applied_preferences(_Attrs(error=DetachedInstanceError("detached")))

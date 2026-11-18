@@ -113,6 +113,9 @@ class RoleLimits(BaseModel):
 class RoleFeatures(BaseModel):
     can_use_reset_strategy: bool = True
     can_use_next_plan: bool = True
+    # Pengu fork, "My Hosts": this role's admins may personalize hosts for their own users (only roles that
+    # cannot create or edit hosts). Upstream PasarGuard ignores the extra key, so a rollback stays safe.
+    can_use_my_hosts: bool = True
 
     model_config = ConfigDict(from_attributes=True)
 

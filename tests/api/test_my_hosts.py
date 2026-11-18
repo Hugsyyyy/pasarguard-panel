@@ -1,6 +1,9 @@
 """API tests of "My Hosts" (Pengu fork): operators personalize host names, order and visibility."""
 
 import asyncio
+import base64
+import json
+import urllib.parse
 
 import pytest
 from fastapi import status
@@ -10,13 +13,18 @@ from sqlalchemy import select
 from app.db.models import Admin
 from app.models.admin import hash_password
 from app.routers.host_preferences import HostPreferenceUpdate
+from app.subscription import config_cache
 from tests.api import TestSession, client
 from tests.api.helpers import (
     auth_headers,
     create_admin,
     create_core,
+    create_group,
+    create_user,
     delete_admin,
     delete_core,
+    delete_group,
+    delete_user,
     get_inbounds,
     strong_password,
     unique_name,
@@ -326,3 +334,91 @@ def test_host_preference_remark_follows_host_format_rules():
         with pytest.raises(ValidationError):
             HostPreferenceUpdate(id=1, remark=remark, priority=0)
     assert HostPreferenceUpdate(id=1, remark=" 🇩🇪 {USERNAME} ", priority=0).remark == "🇩🇪 {USERNAME}"
+
+
+def _link_remarks(subscription_url: str) -> list[str]:
+    """The server names a user's links subscription carries."""
+    config_cache.clear_sub_config_cache()
+    response = client.get(f"{subscription_url}/links")
+    assert response.status_code == status.HTTP_200_OK, response.text
+    remarks = []
+    for line in response.text.splitlines():
+        line = line.strip()
+        if line.startswith("vmess://"):
+            raw = line[len("vmess://") :]
+            remarks.append(json.loads(base64.b64decode(raw + "=" * (-len(raw) % 4))).get("ps", ""))
+        elif "://" in line:
+            remarks.append(urllib.parse.unquote(urllib.parse.urlsplit(line).fragment))
+    return remarks
+
+
+def test_role_feature_switches_my_hosts_off_and_back_on(access_token):
+    """The role's "My Hosts" feature: off refuses the API and stops applying the saved changes to the
+    users' subscriptions (the owner still sees them); on again brings them back unchanged."""
+    owner_headers = auth_headers(access_token)
+    core = create_core(access_token)
+    inbound = get_inbounds(access_token)[0]
+    operator_role = client.get("/api/admin-role/3", headers=owner_headers).json()
+    response = client.post(
+        "/api/admin-role",
+        headers=owner_headers,
+        json={"name": unique_name("my_hosts_role"), "permissions": operator_role["permissions"]},
+    )
+    assert response.status_code == status.HTTP_201_CREATED, response.text
+    role = response.json()
+    assert role["features"]["can_use_my_hosts"] is True
+
+    def switch(on: bool) -> None:
+        features = {**role["features"], "can_use_my_hosts": on}
+        changed = client.put(f"/api/admin-role/{role['id']}", headers=owner_headers, json={"features": features})
+        assert changed.status_code == status.HTTP_200_OK, changed.text
+        assert changed.json()["features"]["can_use_my_hosts"] is on
+
+    operator = create_admin(access_token, role_id=role["id"])
+    login = client.post(
+        "/api/admin/token",
+        data={"username": operator["username"], "password": operator["password"], "grant_type": "password"},
+    )
+    operator_headers = auth_headers(login.json()["access_token"])
+    group = create_group(access_token, inbound_tags=[inbound])
+    user = create_user(access_token, group_ids=[group["id"]])
+    host_payload, host_id = _create_host(access_token, inbound, 7)
+    renamed = unique_name("renamed_by_operator")
+    try:
+        moved = client.put(
+            f"/api/user/{user['username']}/set_owner",
+            params={"admin_username": operator["username"]},
+            headers=owner_headers,
+        )
+        assert moved.status_code == status.HTTP_200_OK, moved.text
+        rows = client.get("/api/hosts/preferences", headers=operator_headers).json()
+        saved = client.put("/api/hosts/preferences", headers=operator_headers, json=_body(rows, {host_id: renamed}))
+        assert saved.status_code == status.HTTP_200_OK, saved.text
+        remarks = _link_remarks(user["subscription_url"])
+        assert renamed in remarks and host_payload["remark"] not in remarks
+
+        switch(False)
+        for method in ("get", "put", "delete"):
+            kwargs = {"json": []} if method == "put" else {}
+            refused = getattr(client, method)("/api/hosts/preferences", headers=operator_headers, **kwargs)
+            assert refused.status_code == status.HTTP_403_FORBIDDEN, (method, refused.text)
+            assert refused.json()["detail"] == "My Hosts is switched off for your role"
+        remarks = _link_remarks(user["subscription_url"])
+        assert host_payload["remark"] in remarks and renamed not in remarks
+        owner_view = client.get(
+            f"/api/admin/by-username/{operator['username']}/host-preferences", headers=owner_headers
+        )
+        assert owner_view.status_code == status.HTTP_200_OK, owner_view.text
+        assert any(row["remark"] == renamed for row in owner_view.json()["hosts"])
+
+        switch(True)
+        assert client.get("/api/hosts/preferences", headers=operator_headers).status_code == status.HTTP_200_OK
+        remarks = _link_remarks(user["subscription_url"])
+        assert renamed in remarks and host_payload["remark"] not in remarks
+    finally:
+        delete_user(access_token, user["username"])
+        client.delete(f"/api/host/{host_id}", headers=owner_headers)
+        delete_group(access_token, group["id"])
+        delete_admin(access_token, operator["username"])
+        client.delete(f"/api/admin-role/{role['id']}", headers=owner_headers)
+        delete_core(access_token, core["id"])

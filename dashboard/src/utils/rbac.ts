@@ -39,6 +39,8 @@ export const hasScopeAll = (admin: AdminDetails | null | undefined, resource: st
  */
 export const canPersonalizeHosts = (admin: AdminDetails | null | undefined) => {
   if (!admin || isOwner(admin)) return false
+  // Same rule as the server (role_allows_my_hosts): the role's "My Hosts" feature is on (the default)
+  if (admin.role?.features?.can_use_my_hosts === false) return false
   return ['create', 'update'].every(action => {
     const value = getActionPermission(admin, 'hosts', action)
     return !value || isScopeNone(value)

@@ -12,16 +12,15 @@ from app.core.host_preferences import (
     custom_remark,
     is_enabled,
     order_hosts,
+    role_allows_my_hosts,
     saved_hosts,
 )
 from app.db import AsyncSession, get_db
 from app.db.models import Admin, Group, ProxyInbound
 from app.models.admin import AdminDetails
-from app.models.admin_role import PermissionScope
 from app.models.host import HostListQuery, validate_format_variables
 from app.operation import OperatorType
 from app.operation.host import HostOperation
-from app.operation.permissions import _get_resource_action, _resolve_scope
 from app.utils import responses
 
 from .authentication import get_current
@@ -67,25 +66,23 @@ class AdminHostPreferences(BaseModel):
     hosts: list[HostPreference]
 
 
-def _grants(admin: AdminDetails, action: str) -> bool:
-    """Same rule as enforce_permission (without the limited-admin part): a truthy value whose scope is not NONE."""
-    value = _get_resource_action(admin, "hosts", action)
-    return bool(value) and _resolve_scope(value) is not PermissionScope.NONE
-
-
 def can_personalize_hosts(admin: AdminDetails) -> bool:
-    """Admins (not the owner) who can neither create nor edit the shared hosts.
+    """Admins (not the owner) whose role has My Hosts on and can neither create nor edit the shared hosts.
 
     Decided by the admin's own role, never by an API key's permissions: a key with custom permissions
-    is refused outright, so a narrow key (even the owner's) cannot hide hosts for anyone.
+    is refused outright, so a narrow key (even the owner's) cannot hide hosts for anyone. The same rule
+    (``role_allows_my_hosts``) decides whether the saved preferences reach the subscriptions.
     """
     if admin.id is None or admin.is_owner or admin.custom_api_key_id is not None:
         return False
-    return not (_grants(admin, "create") or _grants(admin, "update"))
+    return role_allows_my_hosts(admin.role)
 
 
 async def _personalizing_account(db: AsyncSession, admin: AdminDetails, write: bool) -> Admin:
     if not can_personalize_hosts(admin):
+        features = admin.role.features if admin.role is not None else None
+        if features is not None and features.can_use_my_hosts is False and not admin.is_owner:
+            raise HTTPException(status_code=403, detail="My Hosts is switched off for your role")
         raise HTTPException(status_code=403, detail="My Hosts is only for admins who cannot edit the shared hosts")
     if admin.is_limited and (write or (admin.role is not None and admin.role.disabled_when_limited)):
         raise HTTPException(status_code=403, detail="Admin is limited")

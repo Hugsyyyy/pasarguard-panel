@@ -26,6 +26,7 @@ This repository is a **fork** of the [PasarGuard](https://github.com/PasarGuard/
 | My Hosts: server names, order and visibility for each reseller's users | ✗ | ✓ |
 | My Hosts switched on or off per role | ✗ | ✓ |
 | The owner can view and clear any reseller's My Hosts settings | ✗ | ✓ |
+| Repeated bot logins without re-checking the password, at far less CPU | ✗ | ✓ |
 | Dashboard version section that follows this repository's releases | — | ✓ |
 | Updates with `pasarguard update` from this repository | — | ✓ |
 
@@ -60,6 +61,25 @@ Resellers get a **My Hosts** page in the dashboard sidebar. Whatever they change
 - API keys with custom permissions, even the owner's own key, cannot use this feature.
 - A limited admin cannot save changes.
 - The owner can view and clear any reseller's settings (see "My Hosts API" below).
+
+## Repeated logins without the CPU cost
+
+Some bots and apps log in to the panel before every request. Each login is one bcrypt password check, about half a second of CPU. One reseller's bot, at about 250 logins a minute, kept two of our server's four cores busy with that alone.
+
+In this fork a password that has just been checked and accepted is remembered for **5 minutes**, and logging in again with the same password no longer costs that CPU. Nothing changes for bots or resellers, and they do not need to do anything.
+
+**What is kept:**
+
+- **A wrong password is never remembered** and always gets the full check. Guessing a password over the network is no cheaper than before.
+- **A changed password stops the old one at once.**
+- **A disabled or deleted admin** is refused as before, even if their login was remembered.
+- **The password itself is not stored.** Only a cryptographic proof stays in the panel's memory; it is dropped after the window and is gone on restart.
+
+**What to know:**
+
+- While a login is remembered, someone who can read the panel process's memory can test password guesses about 50 times cheaper than bcrypt. That reader already holds the token signing key and the database password.
+- `PENGU_LOGIN_CACHE_SECONDS` in `.env` sets the window (default 300 seconds, at most 3600). `0` switches the feature off. Restart the panel after changing it.
+- Technical details are in [PENGU.md](../PENGU.md).
 
 ## Install
 
@@ -207,6 +227,10 @@ Yes. Every official release is merged and tested automatically, then published a
 **Will my bot or app work with this version?**
 
 If it uses the official PasarGuard API, yes. Nothing in the official API was removed or changed.
+
+**My bot logs in before every request. Is that a problem?**
+
+It works, and in this fork it no longer loads the server much (see "Repeated logins without the CPU cost"). It is still better to keep the token and log in again only after it expires; a panel token lasts 24 hours by default.
 
 **How do I turn My Hosts off for some resellers?**
 

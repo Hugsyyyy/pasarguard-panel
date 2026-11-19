@@ -8,6 +8,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
+from app.core.login_cache import verify_password_remembered
 from app.db import AsyncSession, get_db
 from app.db.crud.admin import (
     build_admin_details,
@@ -362,7 +363,7 @@ async def require_owner(admin: AdminDetails = Depends(get_current)):
 async def validate_admin(db: AsyncSession, username: str, password: str) -> AdminValidationResult | None:
     """Validate admin credentials against the database, with env admin fallback."""
     db_admin = await get_admin_by_username(db, username, load_users=False, load_usage_logs=False)
-    if db_admin and await verify_password(password, db_admin.hashed_password):
+    if db_admin and await verify_password_remembered(password, db_admin.hashed_password, verify_password):
         return AdminValidationResult(
             id=db_admin.id,
             username=db_admin.username,

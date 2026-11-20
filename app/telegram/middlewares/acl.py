@@ -19,14 +19,15 @@ class ACLMiddleware(BaseMiddleware):
         user_id = message_obj.from_user.id
         async with GetDB() as db:
             settings: Telegram = await telegram_settings()
-            admin = await get_admin_by_telegram_id(db, user_id)
+            # No users / usage logs: nothing in the bot reads them, and an admin can have thousands.
+            admin = await get_admin_by_telegram_id(db, user_id, load_users=False, load_usage_logs=False)
             if admin:
                 if admin.status == AdminStatus.disabled:
                     if settings.for_admins_only:
                         return
                     data["admin"] = None
                 else:
-                    admin = build_admin_details(admin, include_loaded_metrics=True)
+                    admin = build_admin_details(admin)
                     data["admin"] = admin
             else:
                 if settings.for_admins_only:

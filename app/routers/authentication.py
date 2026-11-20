@@ -1,5 +1,5 @@
 import hmac
-from datetime import UTC
+from datetime import UTC, datetime as dt, timedelta as td
 from uuid import UUID
 
 from aiogram.utils.web_app import WebAppInitData, safe_parse_webapp_init_data
@@ -380,6 +380,19 @@ async def validate_admin(db: AsyncSession, username: str, password: str) -> Admi
     return None
 
 
+# Telegram signs Mini App init data once, when the app is opened; the signature itself never expires.
+MINI_APP_INIT_DATA_MAX_AGE = td(hours=24)
+
+
+def mini_app_init_data_is_fresh(auth_date: dt | None, now: dt | None = None) -> bool:
+    """False for init data signed more than MINI_APP_INIT_DATA_MAX_AGE ago (or without a date)."""
+    if auth_date is None:
+        return False
+    if auth_date.tzinfo is None:
+        auth_date = auth_date.replace(tzinfo=UTC)
+    return (now or dt.now(UTC)) - auth_date <= MINI_APP_INIT_DATA_MAX_AGE
+
+
 async def validate_mini_app_admin(db: AsyncSession, token: str) -> AdminValidationResult | None:
     """Validate raw MiniApp init data and return it as AdminValidationResult object"""
     settings: Telegram = await telegram_settings()
@@ -396,6 +409,13 @@ async def validate_mini_app_admin(db: AsyncSession, token: str) -> AdminValidati
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not mini_app_init_data_is_fresh(data.auth_date):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="token expired, reopen the app from Telegram",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

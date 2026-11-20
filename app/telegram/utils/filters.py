@@ -44,4 +44,9 @@ class IsScopeAll(Filter):
     async def __call__(self, _, admin: AdminDetails | None = None) -> bool:
         if not admin:
             return False
+        # The scope alone says nothing about a limited admin, whose write actions are blocked.
+        try:
+            enforce_permission(admin, self.resource, self.action)
+        except PermissionDenied:
+            return False
         return is_scope_all(admin, self.resource, self.action)

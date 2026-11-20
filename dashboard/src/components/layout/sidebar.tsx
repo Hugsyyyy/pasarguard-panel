@@ -18,7 +18,7 @@ import useDirDetection from '@/hooks/use-dir-detection'
 import { useSystemVersion } from '@/hooks/use-system-version'
 import { useVersionCheck } from '@/hooks/use-version-check'
 import { cn } from '@/lib/utils'
-import { canPersonalizeHosts, canReadResourcePage, hasPermission, hasScopeAll, isOwner } from '@/utils/rbac'
+import { canPersonalizeHosts, canReadResourcePage, canUseSubPages, hasPermission, hasScopeAll, isOwner } from '@/utils/rbac'
 import {
   ArrowUpDown,
   Bell,
@@ -67,6 +67,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const canReadSystem = hasPermission(admin, 'system', 'read')
   const canReadHosts = canReadResourcePage(admin, 'hosts')
   const canCustomizeHosts = canPersonalizeHosts(admin)
+  const canChooseSubPage = canUseSubPages(admin)
   const canReadGroups = canReadResourcePage(admin, 'groups')
   const canReadAdmins = canReadResourcePage(admin, 'admins')
   const canReadApiKeys = canReadResourcePage(admin, 'api_keys')
@@ -234,6 +235,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         : []),
       ...(canCustomizeHosts
         ? [{ title: 'hostPreferences.title', url: '/host-preferences', icon: ListTodo }]
+        : []),
+      ...(canChooseSubPage
+        ? [{ title: 'subPages.title', url: '/subscription-pages', icon: LayoutTemplate }]
         : []),
       ...(canReadGroups
         ? [

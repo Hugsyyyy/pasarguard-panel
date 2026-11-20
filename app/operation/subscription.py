@@ -7,6 +7,7 @@ from fastapi import Response
 from fastapi.responses import HTMLResponse
 
 from app.core.host_preferences import drop_disallowed_preferences
+from app.core.sub_pages import render_page as render_sub_page, template_for_admin as sub_page_template_for_admin
 from app.db import AsyncSession
 from app.db.crud.hwid import get_user_hwid_by_value, register_user_hwid
 from app.db.crud.user import get_user_usages, user_sub_update
@@ -33,10 +34,8 @@ from app.subscription.share import (
     inject_body_placement,
     setup_format_variables,
 )
-from app.templates import render_template
 from app.utils.hwid import resolve_effective_hwid_settings
 from app.utils.performance import phase
-from config import template_settings
 
 from . import BaseOperation
 from .user import UserOperation
@@ -483,11 +482,8 @@ class SubscriptionOperation(BaseOperation):
         is_subscription_page_request = is_browser_request and not sub_settings.disable_sub_template
         if is_subscription_page_request:
             is_hwid_enabled = await self.is_user_hwid_enabled(db_user)
-            template = (
-                db_user.admin.sub_template
-                if db_user.admin and db_user.admin.sub_template
-                else template_settings.subscription_page_template
-            )
+            # Pengu fork, "Subscription pages": the admin's chosen page, or the default when its file is gone
+            template = sub_page_template_for_admin(db_user.admin)
             global_hwid_conf: HWIDSettings = await hwid_settings()
             is_allow_browser_config = sub_settings.allow_browser_config and (
                 not is_hwid_enabled or not global_hwid_conf.require_hwid_for_manual_sub
@@ -504,11 +500,12 @@ class SubscriptionOperation(BaseOperation):
             formatted_announce = self._format_announce(sub_settings, format_variables)
 
             return HTMLResponse(
-                render_template(
+                render_sub_page(
                     template,
                     self._build_subscription_body_payload(
                         user, links, formatted_announce, sub_settings, format_variables, is_hwid_enabled
                     ),
+                    subscription_url=str(format_variables.get("url", "")),
                 )
             )
         else:

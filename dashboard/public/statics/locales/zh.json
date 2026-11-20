@@ -1190,6 +1190,10 @@
       "can_use_my_hosts": {
         "title": "使用我的主机",
         "description": "允许此角色的管理员为自己的用户重命名、排序和隐藏服务器。关闭后页面会隐藏，他们的更改也不再生效。可以创建或编辑主机的角色无法使用。"
+      },
+      "can_use_sub_pages": {
+        "title": "选择订阅页面",
+        "description": "允许此角色的管理员从所有者已安装的页面中，选择自己的用户在浏览器中看到的页面。关闭后该栏目会隐藏，他们的用户继续看到当前页面。"
       }
     }
   },
@@ -4263,5 +4267,49 @@
     "limited": "您的账户已受限，暂时无法保存更改。",
     "loadFailed": "您的账户无法使用“我的主机”。",
     "originalLabel": "原名称"
+  },
+  "subPages": {
+    "title": "订阅页面",
+    "description": "选择您自己的用户在浏览器中打开订阅链接时看到的页面。",
+    "defaultName": "面板默认",
+    "defaultDescription": "面板所有者为所有人设置的页面。在您选择其他页面之前，您的用户看到的就是它。",
+    "builtinName": "PasarGuard 内置页面",
+    "builtinDescription": "PasarGuard 自带的简单页面。",
+    "customDescription": "面板所有者手动添加的页面。",
+    "customTag": "自定义",
+    "selected": "已选择",
+    "choose": "使用此页面",
+    "preview": "预览",
+    "install": "安装",
+    "remove": "移除",
+    "installToPreview": "安装后即可查看预览",
+    "chosen": "您的用户现在看到的是“{{name}}”",
+    "chooseFailed": "无法更改您的订阅页面",
+    "installed": "已安装“{{name}}”",
+    "installFailed": "无法安装此页面",
+    "removed": "已移除“{{name}}”",
+    "removeFailed": "无法移除此页面",
+    "pathCopied": "路径已复制",
+    "copyPath": "复制模板路径（用于管理员的“订阅模板”字段）",
+    "license": "许可证：{{license}}",
+    "noLicense": "未声明许可证",
+    "loads": "来自其他网站：",
+    "adminsUsing": "选择它的管理员：{{count}}",
+    "limited": "您的账户已受限，暂时无法更改页面。",
+    "missingTitle": "您选择的页面已不可用",
+    "missingDescription": "它的文件已从面板中删除，因此您的用户看到的是面板默认页面。请在下方选择其他页面。",
+    "otherTitle": "面板所有者为您指定了专用页面",
+    "otherDescription": "您的用户现在看到的是此模板。在下方选择页面会替换它。",
+    "blockerTitle": "暂时无法安装新页面",
+    "blockerNotWritable": "面板无法写入 CUSTOM_TEMPLATES_DIRECTORY 指定的文件夹。",
+    "blockerNoDirectory": "页面安装在自定义模板文件夹中。请在面板的 .env 文件中设置 CUSTOM_TEMPLATES_DIRECTORY（例如 /var/lib/pasarguard/templates/）并重启面板。",
+    "loadFailed": "您的账户无法使用订阅页面。",
+    "ownerNote": "安装时会从作者的 GitHub 仓库下载经过审核的确切文件，其他文件一律不接受。角色中开启了“选择订阅页面”的管理员可以选择任何已安装的页面。您自己的页面可以放在自定义模板文件夹中的 subscription/pengu-pages/<name>/index.html。",
+    "previewNote": "这只是示例：此处显示的用户、用量和服务器均为虚构。",
+    "mobile": "手机",
+    "desktop": "电脑",
+    "openInTab": "在新标签页中打开",
+    "removeTitle": "移除“{{name}}”？",
+    "removeDescription": "选择此页面的管理员将回到面板默认页面（目前 {{count}} 位）。之后可以重新安装。"
   }
 }

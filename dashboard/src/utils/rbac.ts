@@ -34,6 +34,15 @@ export const hasScopeAll = (admin: AdminDetails | null | undefined, resource: st
 }
 
 /**
+ * "Subscription pages": admins choose the page their own users see. Same rule as the server
+ * (role_allows_sub_pages): the owner always, others unless the role's feature is switched off.
+ */
+export const canUseSubPages = (admin: AdminDetails | null | undefined) => {
+  if (!admin) return false
+  return isOwner(admin) || admin.role?.features?.can_use_sub_pages !== false
+}
+
+/**
  * "My Hosts": admins who can neither create nor edit the shared hosts personalize them for their
  * own users. Same rule as the API (by permissions, not the role's name).
  */
@@ -88,6 +97,7 @@ export const canAccessRoute = (admin: AdminDetails | null | undefined, pathname:
   if (pathname.startsWith('/users')) return hasPermission(admin, 'users', 'read')
   if (pathname.startsWith('/statistics')) return hasPermission(admin, 'nodes', 'stats')
   if (pathname.startsWith('/host-preferences')) return canPersonalizeHosts(admin)
+  if (pathname.startsWith('/subscription-pages')) return canUseSubPages(admin)
   if (pathname.startsWith('/hosts')) return canReadResourcePage(admin, 'hosts')
   if (pathname.startsWith('/groups')) return canReadResourcePage(admin, 'groups')
   if (pathname === '/templates') return canReadResourcePage(admin, 'templates') || canReadResourcePage(admin, 'client_templates')

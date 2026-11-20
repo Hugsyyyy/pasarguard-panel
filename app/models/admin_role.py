@@ -116,6 +116,9 @@ class RoleFeatures(BaseModel):
     # Pengu fork, "My Hosts": this role's admins may personalize hosts for their own users (only roles that
     # cannot create or edit hosts). Upstream PasarGuard ignores the extra key, so a rollback stays safe.
     can_use_my_hosts: bool = True
+    # Pengu fork, "Subscription pages": this role's admins may choose the page their own users see.
+    # Upstream ignores this key too.
+    can_use_sub_pages: bool = True
 
     model_config = ConfigDict(from_attributes=True)
 

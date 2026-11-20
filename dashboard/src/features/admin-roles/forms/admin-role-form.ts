@@ -130,8 +130,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
 
 export const LIMIT_KEYS = ['max_users', 'data_limit_min', 'data_limit_max', 'expire_days_min', 'expire_days_max', 'min_hwid_per_user', 'max_hwid_per_user', 'on_hold_timeout_days_min', 'on_hold_timeout_days_max'] as const
 
-// Pengu fork: can_use_my_hosts switches "My Hosts" on or off for the role
-export const FEATURE_KEYS: Array<keyof RoleFeatures> = ['can_use_reset_strategy', 'can_use_next_plan', 'can_use_my_hosts']
+// Pengu fork: can_use_my_hosts switches "My Hosts" on or off for the role, can_use_sub_pages "Subscription pages"
+export const FEATURE_KEYS: Array<keyof RoleFeatures> = ['can_use_reset_strategy', 'can_use_next_plan', 'can_use_my_hosts', 'can_use_sub_pages']
 
 const VALID_PERMISSION_ACTIONS = PERMISSION_GROUPS.reduce<Record<string, Set<string>>>((acc, group) => {
   for (const item of group.actions) {
@@ -277,6 +277,7 @@ const featuresSchema = z.object({
   can_use_reset_strategy: z.boolean(),
   can_use_next_plan: z.boolean(),
   can_use_my_hosts: z.boolean(),
+  can_use_sub_pages: z.boolean(),
 })
 
 const accessSchema = z.object({
@@ -324,6 +325,7 @@ export const defaultAdminRoleFeatures = (): AdminRoleFormValues['features'] => (
   can_use_reset_strategy: true,
   can_use_next_plan: true,
   can_use_my_hosts: true,
+  can_use_sub_pages: true,
 })
 
 export const defaultAdminRoleAccess = (): AdminRoleFormValues['access'] => ({
@@ -381,6 +383,7 @@ export const adminRoleFormFromResponse = (role: AdminRoleResponse): AdminRoleFor
     can_use_reset_strategy: role.features?.can_use_reset_strategy ?? true,
     can_use_next_plan: role.features?.can_use_next_plan ?? true,
     can_use_my_hosts: role.features?.can_use_my_hosts ?? true,
+    can_use_sub_pages: role.features?.can_use_sub_pages ?? true,
   },
   access: {
     require_template: role.access?.require_template ?? false,

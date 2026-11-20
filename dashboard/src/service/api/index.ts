@@ -400,6 +400,8 @@ export interface RoleFeatures {
   can_use_next_plan?: boolean;
   /** Pengu fork: "My Hosts" for this role's admins (default true) */
   can_use_my_hosts?: boolean;
+  /** Pengu fork: "Subscription pages" for this role's admins (default true) */
+  can_use_sub_pages?: boolean;
 }
 
 export interface RoleAccess {

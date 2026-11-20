@@ -7,6 +7,7 @@ from app.operation import OperatorType
 from app.operation.user import UserOperation
 from app.telegram.keyboards.confim_action import ConfirmAction
 from app.telegram.keyboards.user import UserPanel, UserPanelAction
+from app.telegram.utils.filters import HasPermission
 from app.telegram.utils.texts import Message as Texts
 
 router = Router(name="confirm_action")
@@ -14,7 +15,7 @@ router = Router(name="confirm_action")
 user_operations = UserOperation(OperatorType.TELEGRAM)
 
 
-@router.callback_query(ConfirmAction.Callback.filter())
+@router.callback_query(HasPermission("users", "read"), ConfirmAction.Callback.filter())
 async def confirm_action(
     event: CallbackQuery, callback_data: ConfirmAction.Callback, db: AsyncSession, admin: AdminDetails
 ):

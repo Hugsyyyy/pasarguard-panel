@@ -69,8 +69,8 @@ async def create_user(event: CallbackQuery, state: FSMContext):
     await state.update_data(messages_to_delete=[msg.message_id])
 
 
-@router.message(forms.CreateUser.username)
-@router.callback_query(RandomUsername.Callback.filter(~F.with_template))
+@router.message(HasPermission("users", "create"), forms.CreateUser.username)
+@router.callback_query(HasPermission("users", "create"), RandomUsername.Callback.filter(~F.with_template))
 async def process_username(event: Message | CallbackQuery, state: FSMContext, db: AsyncSession, admin: AdminDetails):
     await delete_messages(event, state)
     if isinstance(event, Message):
@@ -331,7 +331,7 @@ async def modify_expiry(event: CallbackQuery, callback_data: UserPanel.Callback,
     await add_to_messages_to_delete(state, msg)
 
 
-@router.message(forms.ModifyUser.new_expiry)
+@router.message(HasPermission("users", "update"), forms.ModifyUser.new_expiry)
 async def modify_expiry_done(event: Message, state: FSMContext, db: AsyncSession, admin: AdminDetails):
     await delete_messages(event, state)
     await add_to_messages_to_delete(state, event)
@@ -379,7 +379,7 @@ async def modify_data_limit(event: CallbackQuery, callback_data: UserPanel.Callb
     await add_to_messages_to_delete(state, msg)
 
 
-@router.message(forms.ModifyUser.new_data_limit)
+@router.message(HasPermission("users", "update"), forms.ModifyUser.new_data_limit)
 async def modify_data_limit_done(event: Message, state: FSMContext, db: AsyncSession, admin: AdminDetails):
     await delete_messages(event, state)
     await add_to_messages_to_delete(state, event)
@@ -421,7 +421,7 @@ async def modify_note(event: CallbackQuery, callback_data: UserPanel.Callback, s
     await add_to_messages_to_delete(state, msg)
 
 
-@router.message(forms.ModifyUser.new_note)
+@router.message(HasPermission("users", "update"), forms.ModifyUser.new_note)
 async def modify_note_done(event: Message, state: FSMContext, db: AsyncSession, admin: AdminDetails):
     await delete_messages(event, state)
     await add_to_messages_to_delete(state, event)
@@ -575,8 +575,8 @@ async def create_user_from_template_username(
     await state.update_data(template_id=callback_data.template_id, messages_to_delete=[msg.message_id])
 
 
-@router.message(forms.CreateUserFromTemplate.username)
-@router.callback_query(RandomUsername.Callback.filter(F.with_template))
+@router.message(HasPermission("users", "create"), forms.CreateUserFromTemplate.username)
+@router.callback_query(HasPermission("users", "create"), RandomUsername.Callback.filter(F.with_template))
 async def create_user_from_template_choose(
     event: Message | CallbackQuery, state: FSMContext, db: AsyncSession, admin: AdminDetails
 ):
@@ -760,7 +760,9 @@ async def search_user(event: InlineQuery, admin: AdminDetails, db: AsyncSession)
             )
         ]
     try:
-        await event.answer(result, cache_time=5)
+        # is_personal: without it Telegram serves this answer, for cache_time seconds, to ANY account
+        # that sends the same query to the bot, which shows one admin's users to another.
+        await event.answer(result, cache_time=5, is_personal=True)
     except TelegramBadRequest:  # in case of query too old
         pass
 

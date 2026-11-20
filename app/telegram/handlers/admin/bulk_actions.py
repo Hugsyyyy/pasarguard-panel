@@ -80,7 +80,7 @@ async def bulk_create_from_template(event: CallbackQuery, db: AsyncSession, stat
     await event.message.answer(Texts.choose_a_template, reply_markup=BulkTemplateSelector(templates).as_markup())
 
 
-@router.callback_query(BulkTemplateSelector.Callback.filter())
+@router.callback_query(HasPermission("users", "create"), BulkTemplateSelector.Callback.filter())
 async def bulk_template_chosen(event: CallbackQuery, state: FSMContext, callback_data: BulkTemplateSelector.Callback):
     await delete_messages(event, state, message_ids=[event.message.message_id])
     await state.set_state(forms.BulkCreateFromTemplate.count)
@@ -89,7 +89,7 @@ async def bulk_template_chosen(event: CallbackQuery, state: FSMContext, callback
     await add_to_messages_to_delete(state, msg)
 
 
-@router.message(forms.BulkCreateFromTemplate.count)
+@router.message(HasPermission("users", "create"), forms.BulkCreateFromTemplate.count)
 async def bulk_template_count(event: Message, state: FSMContext):
     await delete_messages(event, state)
     await add_to_messages_to_delete(state, event)
@@ -112,7 +112,7 @@ async def bulk_template_count(event: Message, state: FSMContext):
     await add_to_messages_to_delete(state, msg)
 
 
-@router.callback_query(UsernameStrategySelector.Callback.filter())
+@router.callback_query(HasPermission("users", "create"), UsernameStrategySelector.Callback.filter())
 async def bulk_template_strategy(
     event: CallbackQuery,
     db: AsyncSession,
@@ -141,7 +141,7 @@ async def bulk_template_strategy(
     await state.update_data(messages_to_delete=[msg.message_id])
 
 
-@router.message(forms.BulkCreateFromTemplate.username)
+@router.message(HasPermission("users", "create"), forms.BulkCreateFromTemplate.username)
 async def bulk_template_sequence_username(event: Message, db: AsyncSession, state: FSMContext, admin: AdminDetails):
     await delete_messages(event, state)
     await add_to_messages_to_delete(state, event)
@@ -168,7 +168,7 @@ async def bulk_template_sequence_username(event: Message, db: AsyncSession, stat
     await add_to_messages_to_delete(state, msg)
 
 
-@router.message(forms.BulkCreateFromTemplate.start_number)
+@router.message(HasPermission("users", "create"), forms.BulkCreateFromTemplate.start_number)
 async def bulk_template_start_number(event: Message, db: AsyncSession, state: FSMContext, admin: AdminDetails):
     await delete_messages(event, state)
     await add_to_messages_to_delete(state, event)

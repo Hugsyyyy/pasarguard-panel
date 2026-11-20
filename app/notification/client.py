@@ -91,6 +91,11 @@ async def send_telegram_message(message, chat_id: int | None = None, topic_id: i
     """
     if not chat_id:
         return
+    # The dispatcher drops every Telegram notification while they are switched off or have no
+    # token; per-admin ones (admins.telegram_id) used to be queued and dropped on every user event.
+    settings: NotificationSettings = await notification_settings()
+    if not settings.notify_telegram or not settings.telegram_api_token:
+        return
     await enqueue_telegram(message, chat_id, topic_id)
 
 

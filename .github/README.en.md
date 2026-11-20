@@ -26,6 +26,8 @@ This repository is a **fork** of the [PasarGuard](https://github.com/PasarGuard/
 | My Hosts: server names, order and visibility for each reseller's users | ✗ | ✓ |
 | My Hosts switched on or off per role | ✗ | ✓ |
 | The owner can view and clear any reseller's My Hosts settings | ✗ | ✓ |
+| "Subscription pages": every admin picks the subscription page of their own users from a gallery with live previews | ✗ | ✓ |
+| One-click install of well-known subscription page templates, pinned by version and hash | ✗ | ✓ |
 | Repeated bot logins without re-checking the password, at far less CPU | ✗ | ✓ |
 | Dashboard version section that follows this repository's releases | — | ✓ |
 | Updates with `pasarguard update` from this repository | — | ✓ |
@@ -61,6 +63,55 @@ Resellers get a **My Hosts** page in the dashboard sidebar. Whatever they change
 - API keys with custom permissions, even the owner's own key, cannot use this feature.
 - A limited admin cannot save changes.
 - The owner can view and clear any reseller's settings (see "My Hosts API" below).
+
+## Subscription pages, for every admin
+
+Every admin has a **Subscription pages** entry in the dashboard's side menu. There they choose the page **their own users** see when they open their subscription link in a browser. Other admins' users are not touched, and what the apps download does not change.
+
+**What is in it:**
+
+- A live preview of every page with a made-up user: small on the card, and large in phone and desktop sizes.
+- "Panel default": the page everyone has seen until now. It stays until the admin chooses something else.
+- The pages the owner installed from the catalog.
+- The owner's own pages, dropped into the templates folder.
+
+**The catalog:**
+
+| Page | Author | Written for | What it loads from other sites |
+|---|---|---|---|
+| PasarGuard | [PasarGuard](https://github.com/PasarGuard/subscription-template) | PasarGuard | Nothing |
+| Ourenus | [MatinDehghanian](https://github.com/MatinDehghanian/Ourenus) | PasarGuard and Marzban | Fonts from Google Fonts; its logo and list of devices from the author's GitHub |
+| PGClock | [Mrclocks](https://github.com/Mrclocks/PGClock) | PasarGuard | Its font and QR script, both at fixed versions |
+| PGClock Lite | [Mrclocks](https://github.com/Mrclocks/PGClockLite) | PasarGuard | Its font and QR script, both at fixed versions |
+| PGClock Plus | [Mrclocks](https://github.com/Mrclocks/PGClockPlus) | PasarGuard | Its font at a fixed version |
+| PGClock Pro | [Mrclocks](https://github.com/Mrclocks/PGClockPRO) | PasarGuard | Its font at a fixed version |
+| PGClock Fusion | [Pasham0](https://github.com/Pasham0/PGClockFusion) | PasarGuard | Its font and the country flags at fixed versions |
+| Neon | [7Berlin](https://github.com/7Berlin/pasarguard-neon-template) | PasarGuard | Nothing |
+| Marzban Sub | [x0sina](https://github.com/x0sina/marzban-sub) | Marzban | Scripts, styles, icons and fonts from several sites, some without a fixed version |
+| Marzban Templates 01 | [MuhammadAshouri](https://github.com/MuhammadAshouri/marzban-templates) | Marzban | Scripts and styles from several sites, partly from the author's repository without a fixed version |
+
+**How installing works:**
+
+- None of these pages ships with the panel. The owner presses "Install" and the panel downloads that file from its author's GitHub repository.
+- Every page is pinned to one version and the file's SHA-256 is written in the panel's code; a file that differs by a single byte is not installed.
+- The hash covers the file only. What a page fetches from other sites while it is open (the last column) is outside it; the owner sees the same note on each card.
+- Files go into `subscription/pengu-pages` inside `CUSTOM_TEMPLATES_DIRECTORY`. Without that variable in `.env`, installing is off and the dashboard says so.
+- The last two pages were written for Marzban. The panel hands them the data in the shape they expect, so they work on PasarGuard too.
+- You can add a page of your own: put it as `index.html` into `subscription/pengu-pages/<name>` (lower-case letters, digits and dashes).
+
+**Who may choose:**
+
+- Every role has a "Choose a subscription page" switch: "Admin Roles", "Edit role", "Features". It is on by default.
+- When the owner switches it off for a role, the section disappears from those admins' menu, but the page they have now stays for their users.
+- So the owner can give an admin a page and lock it: copy the page's path from its card and put it into the "Subscription Template Path" field of that admin.
+
+**Security:**
+
+- Pages are other people's code. Each preview runs in an isolated frame and cannot reach the dashboard's session.
+- Admins only choose among installed pages; they cannot upload anything.
+- API keys with their own permissions cannot use this, and a limited admin cannot change the page.
+- When the file of an admin's chosen page is gone, their users get the default page; the subscription does not break.
+- When the owner removes a page, the admins who had it go back to the default page.
 
 ## Repeated logins without the CPU cost
 
@@ -127,6 +178,8 @@ After installing, **`pasarguard update` updates from this repository**: it pulls
 ## Going back to the official release
 
 Going back is possible and was tested on a copy of a real database. Only the My Hosts settings are lost.
+
+Before going back, if an admin chose "PasarGuard built-in" or one of the two Marzban pages, set their page to "Panel default": the official release does not know these two, and that admin's users would get an error instead of the subscription page. The other installed pages work on the official release as well.
 
 1. Stop the panel:
 

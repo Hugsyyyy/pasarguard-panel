@@ -50,4 +50,9 @@ from . import host_preferences
 
 api_router.include_router(host_preferences.router)
 
+# Pengu fork: Subscription pages (each admin's own page, the gallery and its previews)
+from . import sub_pages
+
+api_router.include_router(sub_pages.router)
+
 __all__ = ["api_router"]

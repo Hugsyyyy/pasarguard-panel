@@ -1201,6 +1201,10 @@
       "can_use_my_hosts": {
         "title": "Use My Hosts",
         "description": "Let this role's admins rename, reorder and hide servers for their own users. When off, the page is hidden and their changes stop applying. Roles that can create or edit hosts never get it."
+      },
+      "can_use_sub_pages": {
+        "title": "Choose a subscription page",
+        "description": "Let this role's admins pick the page their own users see in a browser, from the pages the owner installed. When off, the section is hidden and their users keep the page they have now."
       }
     }
   },
@@ -4260,5 +4264,49 @@
     "limited": "Your account is limited, so changes cannot be saved right now.",
     "loadFailed": "My Hosts is not available for your account.",
     "originalLabel": "Original name"
+  },
+  "subPages": {
+    "title": "Subscription pages",
+    "description": "Choose the page your own users see when they open their subscription link in a browser.",
+    "defaultName": "Panel default",
+    "defaultDescription": "The page the panel owner set for everyone. Your users get it until you choose another one.",
+    "builtinName": "PasarGuard built-in",
+    "builtinDescription": "The simple page that ships with PasarGuard.",
+    "customDescription": "A page the panel owner added by hand.",
+    "customTag": "Custom",
+    "selected": "Selected",
+    "choose": "Use this page",
+    "preview": "Preview",
+    "install": "Install",
+    "remove": "Remove",
+    "installToPreview": "Install it to see the preview",
+    "chosen": "Your users now get “{{name}}”",
+    "chooseFailed": "Could not change your subscription page",
+    "installed": "“{{name}}” was installed",
+    "installFailed": "Could not install this page",
+    "removed": "“{{name}}” was removed",
+    "removeFailed": "Could not remove this page",
+    "pathCopied": "Path copied",
+    "copyPath": "Copy the template path (for the “Subscription Template Path” field of an admin)",
+    "license": "License: {{license}}",
+    "noLicense": "No license stated",
+    "loads": "From other sites:",
+    "adminsUsing": "Admins who chose it: {{count}}",
+    "limited": "Your account is limited, so the page cannot be changed right now.",
+    "missingTitle": "Your chosen page is no longer available",
+    "missingDescription": "Its file was removed from the panel, so your users get the panel’s default page. Choose another page below.",
+    "otherTitle": "The panel owner gave you a page of its own",
+    "otherDescription": "Your users get this template now. Choosing a page below replaces it.",
+    "blockerTitle": "New pages cannot be installed yet",
+    "blockerNotWritable": "The panel cannot write into the folder named by CUSTOM_TEMPLATES_DIRECTORY.",
+    "blockerNoDirectory": "Pages are installed into the custom templates folder. Set CUSTOM_TEMPLATES_DIRECTORY in the panel’s .env file (for example /var/lib/pasarguard/templates/) and restart the panel.",
+    "loadFailed": "Subscription pages are not available for your account.",
+    "ownerNote": "Installing downloads the exact reviewed file from the author’s GitHub repository; nothing else is accepted. Every installed page can be chosen by admins whose role has “Choose a subscription page” on. Your own pages can be added as subscription/pengu-pages/<name>/index.html inside the custom templates folder.",
+    "previewNote": "A sample: the user, usage and servers shown here are made up.",
+    "mobile": "Phone",
+    "desktop": "Desktop",
+    "openInTab": "Open in a new tab",
+    "removeTitle": "Remove “{{name}}”?",
+    "removeDescription": "Admins who chose this page go back to the panel’s default page ({{count}} now). You can install it again later."
   }
 }

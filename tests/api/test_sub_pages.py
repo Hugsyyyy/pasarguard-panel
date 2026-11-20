@@ -10,7 +10,7 @@ from jinja2 import ChoiceLoader, FileSystemLoader
 from sqlalchemy import select
 
 from app.core import sub_pages
-from app.db.models import Admin
+from app.db.models import Admin, AdminStatus
 from app.models.admin import hash_password
 from app.templates import env
 from config import template_settings
@@ -388,3 +388,73 @@ def test_preview_of_a_marzban_page(owner, gallery, monkeypatch):
     page = client.get(f"{base}/fake-page", headers=BROWSER)
     assert page.status_code == status.HTTP_200_OK, page.text[:300]
     assert f"23|4|{base}/fake-page</html>" in page.text
+
+
+def _set_admin_status(username: str, value: AdminStatus) -> None:
+    async def _set() -> None:
+        async with TestSession() as session:
+            row = (await session.execute(select(Admin).where(Admin.username == username))).scalar_one()
+            row.status = value
+            await session.commit()
+
+    asyncio.run(_set())
+
+
+def test_limited_admin_cannot_change_the_page(gallery, served_user):
+    operator, headers, _ = served_user
+    _add_page(gallery, "mine", "<html>MINE</html>")
+    assert client.put("/api/sub-pages/selection", headers=headers, json={"key": "mine"}).status_code == 200
+    _set_admin_status(operator["username"], AdminStatus.limited)
+    try:
+        refused = client.put("/api/sub-pages/selection", headers=headers, json={"key": "default"})
+        assert refused.status_code == status.HTTP_403_FORBIDDEN, refused.text
+    finally:
+        _set_admin_status(operator["username"], AdminStatus.active)
+    assert client.get("/api/sub-pages", headers=headers).json()["selected"] == "mine"
+
+
+def test_page_that_fails_for_a_user_gives_that_user_the_default_page(owner, gallery, served_user):
+    _, headers, user = served_user
+    # compiles, and renders for the preview's user (who has an expiry), but not for a user without one
+    _add_page(gallery, "trips", "<html><head></head>TRIPS {{ (user.expire - now()).days }}</html>")
+    assert client.put("/api/sub-pages/selection", headers=headers, json={"key": "trips"}).status_code == 200
+
+    page = _page_of(user)
+    assert "TRIPS" not in page and user["username"] in page
+
+    base = client.get("/api/sub-pages", headers=owner["headers"]).json()["preview_base"]
+    assert "TRIPS 23" in client.get(f"{base}/trips", headers=BROWSER).text
+    _add_page(gallery, "broken", "<html>{{ user.nothing.here }}</html>")
+    failed = client.get(f"{base}/broken", headers=BROWSER)
+    assert failed.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert failed.json()["detail"] == "This page could not be rendered (UndefinedError)"
+
+
+def test_marzban_page_for_a_real_user(owner, gallery, monkeypatch, served_user):
+    _, headers, user = served_user
+    body = (
+        b"<html><head></head><script>const days = {{ ((user.expire - now().timestamp()) // 86400) | int "
+        b'if user.expire else -1 }}; const subLinks = "{{ user.links }}"</script>'
+        b"URL={{ user.subscription_url }} NAME={{ user.username }} STATUS={{ user.status.value }}</html>"
+    )
+    _fake_catalog_page(monkeypatch, body, marzban="path")
+
+    async def download(_page):
+        return body
+
+    monkeypatch.setattr(sub_pages, "download", download)
+    assert client.post("/api/sub-pages/fake-page/install", headers=owner["headers"]).status_code == 200
+    assert client.put("/api/sub-pages/selection", headers=headers, json={"key": "fake-page"}).status_code == 200
+
+    page = _page_of(user)
+    assert "const days = -1;" in page  # this user has no expiry
+    assert f"NAME={user['username']} STATUS=active" in page
+    assert "URL=/" in page and "URL=http" not in page
+    assert "&#39;" not in page and "&amp;" not in page
+
+
+def test_ticket_with_odd_characters_is_refused_not_an_error(owner):
+    client.get("/api/sub-pages", headers=owner["headers"])
+    for ticket in ("ffffffffff.%C3%A9", "ffffffffff.%E2%80%8F", "%C3%A9.%C3%A9"):
+        response = client.get(f"/api/sub-pages/preview/{ticket}/default", headers=BROWSER)
+        assert response.status_code == status.HTTP_403_FORBIDDEN, (ticket, response.status_code)

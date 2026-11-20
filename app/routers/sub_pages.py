@@ -270,7 +270,7 @@ _STORAGE_SHIM_SOURCE = """
 _STORAGE_SHIM = (
     "<script>" + " ".join(line.strip() for line in _STORAGE_SHIM_SOURCE.splitlines() if line.strip()) + "</script>"
 )
-_HEAD_TAG = re.compile(r"<head[^>]*>", re.IGNORECASE)
+_HEAD_TAG = re.compile(r"<head(\s[^>]*)?>", re.IGNORECASE)
 _DOCTYPE = re.compile(r"\s*<!doctype[^>]*>", re.IGNORECASE)
 
 
@@ -372,10 +372,11 @@ async def preview_sub_page(request: Request, ticket: str, key: str):
         encoded = b64encode("\n".join(_sample_links()).encode()).decode()
         return PlainTextResponse(encoded, headers=_PREVIEW_HEADERS)
     try:
-        html = sub_pages.render_page(template, payload, subscription_url=url)
+        html = sub_pages.render_page(template, payload, subscription_url=url, fallback=False)
     except Exception as exc:
-        # Shown to the admin who is looking at the gallery: say why instead of a bare 500
-        raise HTTPException(status_code=500, detail=f"This page could not be rendered: {type(exc).__name__}: {exc}")
+        # Shown to the admin who is looking at the gallery: name the kind of error, keep the rest in the log
+        sub_pages.logger.exception("preview of subscription page %s failed", template)
+        raise HTTPException(status_code=500, detail=f"This page could not be rendered ({type(exc).__name__})")
     return HTMLResponse(with_preview_shim(html), headers={**_PREVIEW_HEADERS, "Content-Security-Policy": _SANDBOX})
 
 

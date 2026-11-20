@@ -236,3 +236,62 @@ def test_install_needs_a_custom_templates_directory(monkeypatch):
     with pytest.raises(sub_pages.InstallError, match="CUSTOM_TEMPLATES_DIRECTORY"):
         asyncio.run(sub_pages.install(sub_pages.CATALOG[0]))
     assert sub_pages.uninstall(sub_pages.CATALOG[0].slug) is False
+
+
+def test_preview_ticket_with_odd_characters_is_just_invalid():
+    expires = sub_pages.make_preview_ticket("secret", now=1000).split(".")[0]
+    for signature in ("é", "\u200f", "ß" * 24, "\x00"):
+        assert not sub_pages.preview_ticket_valid("secret", f"{expires}.{signature}", now=1000)
+
+
+def test_preview_shim_does_not_take_a_header_tag_for_the_head():
+    page = with_preview_shim("<!doctype html><body><header>top</header></body>")
+    assert page.startswith("<!doctype html><script>")
+    assert page.index("pengu-preview") < page.index("<header>")
+
+
+def test_marzban_page_is_not_autoescaped_but_a_pasarguard_page_is(gallery, monkeypatch):
+    links = ["vless://id@host:443?security=tls&sni=host#name", "trojan://pw@host:443?type=ws&path=%2Fws#name"]
+    user = SimpleNamespace(username="u1", expire=None, on_hold_timeout=None)
+    payload = {"user": user, "links": links}
+    add_page(gallery, "old-style", '<script>const subLinks = "{{ user.links }}"</script>')
+    add_page(gallery, "new-style", "{% for link in links %}{{ link }} {% endfor %}")
+    _marzban_catalog(monkeypatch, "old-style", "url")
+
+    old = sub_pages.render_page(sub_pages.page_template("old-style"), payload, "https://x/sub/T")
+    # what Marzban itself gives the page: the list as Python writes it, nothing escaped
+    assert old == f'<script>const subLinks = "{links}"</script>'
+    new = sub_pages.render_page(sub_pages.page_template("new-style"), payload, "https://x/sub/T")
+    assert "&amp;sni=host" in new and "&sni=host" not in new
+
+
+def test_page_that_fails_for_a_user_is_replaced_by_the_default(gallery, monkeypatch):
+    default = gallery / "subscription" / "plain.html"
+    default.parent.mkdir(parents=True, exist_ok=True)
+    default.write_text("DEFAULT {{ user.username }}", encoding="utf-8")
+    monkeypatch.setattr(template_settings, "subscription_page_template", "subscription/plain.html")
+    add_page(gallery, "trips", "{{ (user.expire - now()).days }}")
+    template = sub_pages.page_template("trips")
+    assert sub_pages.usable(template)
+
+    with_expiry = {"user": SimpleNamespace(username="u1", expire=datetime.now(UTC) + timedelta(days=5, hours=1))}
+    assert sub_pages.render_page(template, with_expiry) == "5"
+    without_expiry = {"user": SimpleNamespace(username="u2", expire=None)}
+    assert sub_pages.render_page(template, without_expiry) == "DEFAULT u2"
+    # a preview shows the failure instead of hiding it behind the default page
+    with pytest.raises(TypeError):
+        sub_pages.render_page(template, without_expiry, fallback=False)
+
+
+def test_install_leaves_only_the_page_file(gallery, monkeypatch):
+    good = b"<html><head></head><body>ok</body></html>"
+    page = _fake_catalog_page(monkeypatch, good)
+
+    async def download(_page):
+        return good
+
+    monkeypatch.setattr(sub_pages, "download", download)
+    asyncio.run(sub_pages.install(page))
+    asyncio.run(sub_pages.install(page))
+    folder = gallery / sub_pages.PAGES_DIR / "fake-page"
+    assert [entry.name for entry in folder.iterdir()] == ["index.html"]

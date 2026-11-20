@@ -1,7 +1,7 @@
 """Subscription pages (Pengu fork): every admin picks the page their own users see in a browser.
 
-Upstream already stores a page template per admin (``admins.sub_template``, a template path) that only
-the owner can type in by hand. This module turns it into a gallery:
+Upstream already stores a page template per admin (``admins.sub_template``, a template path) that
+someone who may edit admins types in by hand. This module turns it into a gallery:
 
 - the panel's default page (``SUBSCRIPTION_PAGE_TEMPLATE``): what an admin without a choice gets;
 - PasarGuard's built-in page, when the default is a different file;
@@ -15,8 +15,9 @@ its scripts run in the users' browsers, so a file is only ever taken at a review
 
 Who may choose is decided by the admin's role (``role_allows_sub_pages``: the role's "Subscription
 pages" feature, on by default). The stored choice is used whether or not the role still allows choosing,
-so the owner can give an admin a page and lock it. A choice whose file is gone falls back to the
-default page instead of failing the subscription.
+so the owner can give an admin a page and lock it. (Upstream's admin form still takes any path from
+whoever has ``admins.update``; that is unchanged.) A choice whose file is gone, or that fails while it is
+rendered for a user, falls back to the default page instead of failing the subscription.
 """
 
 import asyncio
@@ -24,6 +25,7 @@ import hashlib
 import hmac
 import os
 import re
+import secrets
 import shutil
 import time
 from base64 import urlsafe_b64encode
@@ -37,7 +39,10 @@ from jinja2 import ChoiceLoader, FileSystemLoader, PrefixLoader, TemplateError
 
 from app.core.host_preferences import _field
 from app.templates import env, render_template
+from app.utils.logger import get_logger
 from config import template_settings
+
+logger = get_logger("sub-pages")
 
 PAGES_DIR = "subscription/pengu-pages"
 BUILTIN_PREFIX = "pengu-builtin"
@@ -517,15 +522,44 @@ def _catalog_page_of(template: str) -> CatalogPage | None:
     return _CATALOG_BY_SLUG.get(key)
 
 
-def render_page(template: str, payload: dict, subscription_url: str = "") -> str:
-    """Render a subscription page. ``payload`` is the dict PasarGuard gives its own page."""
+_marzban_environment = None
+
+
+def _marzban_env():
+    """Marzban renders its pages without autoescaping, and its pages count on that: one of them puts the
+    links into a script, where an escaped ``&`` would stay escaped and break every link. Same loader,
+    filters and globals as the panel's own environment; rebuilt when that one's loader is replaced."""
+    global _marzban_environment
+    if _marzban_environment is None or _marzban_environment.loader is not env.loader:
+        _marzban_environment = env.overlay(autoescape=False)
+    return _marzban_environment
+
+
+def _render(template: str, payload: dict, subscription_url: str) -> str:
     page = _catalog_page_of(template)
-    if page is not None and page.marzban:
-        if page.marzban == "path":
-            parts = urlsplit(subscription_url)
-            subscription_url = parts.path + (f"?{parts.query}" if parts.query else "")
-        payload = {**payload, "user": MarzbanUser(payload.get("user"), payload.get("links"), subscription_url)}
-    return render_template(template, payload)
+    if page is None or not page.marzban:
+        return render_template(template, payload)
+    if page.marzban == "path":
+        parts = urlsplit(subscription_url)
+        subscription_url = parts.path + (f"?{parts.query}" if parts.query else "")
+    user = MarzbanUser(payload.get("user"), payload.get("links"), subscription_url)
+    return _marzban_env().get_template(template).render({**payload, "user": user})
+
+
+def render_page(template: str, payload: dict, subscription_url: str = "", fallback: bool = True) -> str:
+    """Render a subscription page. ``payload`` is the dict PasarGuard gives its own page.
+
+    A chosen page that fails for this user (a page tried only with ordinary users can still trip over
+    one without an expiry, for example) is replaced by the panel's default page: a user must get a
+    subscription page, not an error. ``fallback=False`` (previews) lets the error through instead."""
+    default = template_settings.subscription_page_template
+    if not fallback or template == default:
+        return _render(template, payload, subscription_url)
+    try:
+        return _render(template, payload, subscription_url)
+    except Exception:
+        logger.exception("subscription page %s failed to render; the default page was used", template)
+        return render_template(default, payload)
 
 
 # --- install and remove ----------------------------------------------------------------------------
@@ -558,9 +592,13 @@ def _write_page(slug: str, data: bytes) -> None:
     target = directory / slug
     try:
         target.mkdir(parents=True, exist_ok=True)
-        temporary = target / ".index.html.tmp"
-        temporary.write_bytes(data)
-        os.replace(temporary, target / "index.html")
+        # a name of its own: two workers installing the same page must not share a half-written file
+        temporary = target / f".index.{secrets.token_hex(8)}.tmp"
+        try:
+            temporary.write_bytes(data)
+            os.replace(temporary, target / "index.html")
+        finally:
+            temporary.unlink(missing_ok=True)
     except OSError as exc:
         raise InstallError(f"Could not write the page into the templates directory: {exc.strerror or exc}") from exc
 
@@ -583,12 +621,15 @@ async def install(page: CatalogPage) -> None:
 
 
 def uninstall(slug: str) -> bool:
-    """Remove an installed catalog page. False when it was not there."""
+    """Remove an installed catalog page. False when it was not there or could not be removed."""
     directory = pages_directory()
     if directory is None or not is_slug(slug):
         return False
     target = directory / slug
-    if not (target / "index.html").is_file():
+    try:
+        # the page file first: once it is gone the page is uninstalled, whatever is left of the folder
+        (target / "index.html").unlink()
+    except OSError:
         return False
     shutil.rmtree(target, ignore_errors=True)
     return True
@@ -617,4 +658,5 @@ def preview_ticket_valid(secret: str, ticket: str, now: float | None = None) -> 
         return False
     if expires < (time.time() if now is None else now):
         return False
-    return hmac.compare_digest(signature, _ticket_signature(secret, expires))
+    # as bytes: compare_digest refuses text that is not ASCII, and the ticket comes from the URL
+    return hmac.compare_digest(signature.encode(), _ticket_signature(secret, expires).encode())

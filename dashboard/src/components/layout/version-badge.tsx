@@ -10,7 +10,7 @@ interface VersionBadgeProps {
 }
 
 export function VersionBadge({ currentVersion, className }: VersionBadgeProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { hasUpdate, latestVersion, releaseUrl, isLoading } = useVersionCheck(currentVersion)
   const { state, isMobile } = useSidebar()
 
@@ -55,7 +55,7 @@ export function VersionBadge({ currentVersion, className }: VersionBadgeProps) {
           <div className="space-y-0.5 text-[10px]">
             <p className="font-medium">{t('version.newVersionAvailable')}</p>
             <p>
-              {t('version.currentVersion')}: v{currentVersion} → {t('version.latestVersion')}: v{latestVersion}
+              {t('version.currentVersion')}: v{currentVersion} {i18n.dir() === 'rtl' ? '←' : '→'} {t('version.latestVersion')}: v{latestVersion}
             </p>
             <p className="text-[9px]">{t('version.clickToUpdate')}</p>
           </div>
@@ -112,7 +112,7 @@ export function VersionBadge({ currentVersion, className }: VersionBadgeProps) {
         <div className="space-y-0.5 text-[10px]">
           <p className="font-medium">{t('version.newVersionAvailable')}</p>
           <p>
-            {t('version.currentVersion')}: v{currentVersion} → {t('version.latestVersion')}: v{latestVersion}
+            {t('version.currentVersion')}: v{currentVersion} {i18n.dir() === 'rtl' ? '←' : '→'} {t('version.latestVersion')}: v{latestVersion}
           </p>
           <p className="text-[9px]">{t('version.clickToUpdate')}</p>
         </div>

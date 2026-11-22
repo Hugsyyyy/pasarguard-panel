@@ -34,6 +34,8 @@ export function VersionUpdateBanner() {
   const [isClosing, setIsClosing] = useState(false)
   const [isAnimating, setIsAnimating] = useState(false)
   const normalizedVersion = currentVersion ? currentVersion.replace(/[^0-9.]/g, '') : null
+  // Pengu fork: the banner shows the full version (5.6.0-pengu.6); only the comparison uses the normalized form
+  const displayCurrentVersion = currentVersion ? currentVersion.replace(/^v/, '') : null
   const { hasUpdate, latestVersion, releaseUrl, isLoading } = useVersionCheck(normalizedVersion, { enabled: isOwnerAdmin })
 
   const gradientBg = getGradientByColorTheme(colorTheme, isDark, 'banner')
@@ -150,7 +152,7 @@ export function VersionUpdateBanner() {
           <div className="min-w-0 flex-1 overflow-hidden">
             <p className={cn('text-foreground/90 text-xs leading-tight font-semibold break-words sm:text-sm', isRTL ? 'text-right' : 'text-left')}>{t('version.newVersionAvailable')}</p>
             <p className={cn('text-foreground/70 mt-0.5 text-[11px] leading-relaxed break-words sm:mt-1 sm:text-xs', isRTL ? 'text-right' : 'text-left')}>
-              {t('version.updateBanner', { current: `v${normalizedVersion}`, latest: `v${latestVersion}` })}
+              {t('version.updateBanner', { current: `v${displayCurrentVersion}`, latest: `v${latestVersion}` })}
             </p>
             <div className="mt-1.5 flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-1.5">
               <span className="text-foreground/60 text-[11px] leading-relaxed break-words sm:text-xs sm:whitespace-nowrap">{t('version.updateCommandLabel')}</span>

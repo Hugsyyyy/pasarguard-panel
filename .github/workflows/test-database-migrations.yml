@@ -5,12 +5,9 @@ on:
         paths:
             - "**.py"
             - ".github/workflows/test-database-migrations.yml"
+    # Pengu fork: these jobs are required checks on the pengu branch, so they run on every pull request
+    # (with a paths filter, a dashboard-only PR never gets them and can never be merged).
     pull_request:
-        paths:
-            - "**.py"
-            - "uv.lock"
-            - "pyproject.toml"
-            - ".github/workflows/test-database-migrations.yml"
     workflow_dispatch:
 
 jobs:

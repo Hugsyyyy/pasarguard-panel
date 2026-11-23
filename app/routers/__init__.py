@@ -55,4 +55,9 @@ from . import sub_pages
 
 api_router.include_router(sub_pages.router)
 
+# Pengu fork: Traffic baskets (separate volume per set of groups, plus a shared volume)
+from . import pengu_baskets
+
+api_router.include_router(pengu_baskets.router)
+
 __all__ = ["api_router"]

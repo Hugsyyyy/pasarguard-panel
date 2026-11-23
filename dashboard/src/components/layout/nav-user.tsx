@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input'
 import { LoaderCircle, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { BasketSummary } from '@/components/layout/pengu-basket-summary'
 
 type EffectiveLimits = {
   dataLimit: number | null
@@ -125,6 +126,11 @@ export function NavUser({
                       </div>
                       {hasDataLimit && <Progress indicatorClassName={sliderColor} value={getProgressPct(usedTraffic, dataLimit)} className="h-1" />}
                     </div>
+                    {!isOwner(admin) && (
+                      <div className="text-muted-foreground text-xs">
+                        <BasketSummary />
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">{t('statistics.totalUsage')}</span>
                       <span className="font-medium">
@@ -227,6 +233,7 @@ export function NavUser({
                       </div>
                       {hasDataLimit && <Progress indicatorClassName={sliderColor} value={getProgressPct(usedTraffic, dataLimit)} className={cn('h-1')} />}
                     </div>
+                    {!isOwner(admin) && <BasketSummary />}
                     <div className="flex items-center gap-2">
                       <ChartNoAxesColumn className="size-3" />
                       <span>

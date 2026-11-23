@@ -155,11 +155,19 @@ class AdminOperation(BaseOperation):
             if existing_admins:
                 await self.raise_error(message="Telegram ID is already assigned to another admin.", code=409, db=db)
 
+        # Pengu fork: for an admin in traffic-basket mode the data limit is its shared basket;
+        # upstream's own limit stays off so a whole-admin limit never fires.
+        from app.operation.pengu_baskets import apply_blocks, redirect_shared_limit
+
+        basket_mode = await redirect_shared_limit(db, db_admin, modified_admin)
+
         old_users_sync_blocked = await admin_users_sync_blocked(db_admin)
         db_admin = await update_admin(db, db_admin, modified_admin)
 
         # Sync users to nodes if this admin's role/status starts or stops blocking user sync.
         await sync_admin_users_for_block_transition(db, db_admin, old_users_sync_blocked)
+        if basket_mode:
+            await apply_blocks(db, db_admin.id)
 
         logger.info(f'Admin "{db_admin.username}" with id "{db_admin.id}" modified by admin "{current_admin.username}"')
 
@@ -322,6 +330,11 @@ class AdminOperation(BaseOperation):
         # If admin was limited and is now active, re-sync all users to nodes
         if old_status == AdminStatus.limited and db_admin.status == AdminStatus.active:
             await sync_admin_users_for_block_transition(db, db_admin, was_blocked=True)
+
+        # Pengu fork: the traffic baskets start again from zero too.
+        from app.operation.pengu_baskets import reset_basket_usage
+
+        await reset_basket_usage(db, db_admin.id)
 
         logger.info(f'Admin "{db_admin.username}" usage has been reset by admin "{admin.username}"')
         reseted_admin_details = build_admin_details(db_admin, include_loaded_metrics=True)

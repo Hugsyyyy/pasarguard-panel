@@ -289,6 +289,10 @@ async def remove_groups(db: AsyncSession, group_ids: list[int]) -> None:
     await db.execute(delete(users_groups_association).where(users_groups_association.c.groups_id.in_(group_ids)))
     await db.execute(delete(template_group_association).where(template_group_association.c.group_id.in_(group_ids)))
     await db.execute(delete(inbounds_groups_association).where(inbounds_groups_association.c.group_id.in_(group_ids)))
+    # Pengu fork: a deleted group leaves its traffic basket (SQLite has no cascade and reuses ids).
+    from app.db.crud.pengu_baskets import forget_groups
+
+    await forget_groups(db, group_ids)
     await db.execute(delete(Group).where(Group.id.in_(group_ids)))
     await remove_ids_from_role_access(db, "allowed_group_ids", group_ids)
     await db.commit()

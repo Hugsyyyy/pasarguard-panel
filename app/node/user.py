@@ -1,6 +1,7 @@
 from PasarGuardNodeBridge import create_proxy, create_user
 from PasarGuardNodeBridge.common.service_pb2 import User as ProtoUser
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import async_object_session
 
 from app.db import AsyncSession
 from app.db.models import (
@@ -50,8 +51,23 @@ async def serialize_user(user: User, allowed_protocols: frozenset[ProxyProtocol]
         inbounds = _inbounds_from_loaded_groups(user)
         if inbounds is None:
             inbounds = await user.inbounds()
+        if inbounds:
+            inbounds = (await _pengu_basket_filtered(user, [(user, inbounds)]))[0]
 
     return _serialize_user_for_node(user.id, user_settings, inbounds, allowed_protocols)
+
+
+async def _pengu_basket_filtered(any_user: User, items: list[tuple[User, list[str]]]) -> list[list[str]]:
+    """Pengu fork: drop the tags of traffic baskets the user's admin has used up (app/core/pengu_baskets.py)."""
+    session = async_object_session(any_user)
+    if session is None or not items:
+        return [tags for _, tags in items]
+    from app.db.crud.pengu_baskets import basket_tag_filter
+
+    apply = await basket_tag_filter(session, {user.__dict__.get("admin_id") for user, _ in items})
+    if apply is None:
+        return [tags for _, tags in items]
+    return [apply(user.__dict__.get("admin_id"), tags) for user, tags in items]
 
 
 async def node_payload_signature(user: User) -> tuple[str, bytes, tuple[str, ...]]:
@@ -129,6 +145,7 @@ async def core_users(
             User.id,
             User.proxy_settings,
             inbound_agg,
+            User.admin_id,  # Pengu fork: traffic basket filter below
         )
         # Users without a matching enabled inbound are omitted from the payload below.
         # Inner joins let the database prune unrelated memberships before aggregation.
@@ -168,8 +185,15 @@ async def core_users(
     results = (await db.execute(stmt)).all()
     bridge_users: list = []
 
+    # Pengu fork: drop the tags of traffic baskets the user's admin has used up.
+    from app.db.crud.pengu_baskets import basket_tag_filter
+
+    basket_filter = await basket_tag_filter(db, {row.admin_id for row in results})
+
     for row in results:
         inbound_tags = row.inbound_tags.split(",") if row.inbound_tags else []
+        if inbound_tags and basket_filter is not None:
+            inbound_tags = basket_filter(row.admin_id, inbound_tags)
         if inbound_tags:
             bridge_users.append(
                 _serialize_user_for_node(
@@ -200,6 +224,7 @@ async def serialize_users_for_node(
 ) -> list[ProtoUser]:
     """Serialize users for node dispatch."""
     bridge_users: list = []
+    prepared: list[tuple[User, list[str]]] = []
 
     for user in users:
         inbounds_list = []
@@ -209,7 +234,10 @@ async def serialize_users_for_node(
                 inbounds_list = await user.inbounds()
             else:
                 inbounds_list = loaded_inbounds
+        prepared.append((user, inbounds_list))
 
+    filtered = await _pengu_basket_filtered(users[0], prepared) if users else []
+    for (user, _), inbounds_list in zip(prepared, filtered):
         bridge_users.append(_serialize_user_for_node(user.id, user.proxy_settings, inbounds_list, allowed_protocols))
 
     return bridge_users

@@ -250,6 +250,10 @@ async def remove_admin(db: AsyncSession, dbadmin: Admin) -> None:
     """
     await db.execute(delete(APIKey).where(APIKey.admin_id == dbadmin.id))
     await db.execute(delete(PasskeyChallenge).where(PasskeyChallenge.admin_id == dbadmin.id))
+    # Pengu fork: traffic basket volumes belong to the admin too.
+    from app.db.crud.pengu_baskets import forget_admins
+
+    await forget_admins(db, [dbadmin.id])
     await db.delete(dbadmin)
     await db.commit()
 
@@ -860,5 +864,9 @@ async def remove_admins(db: AsyncSession, admin_ids: list[int]) -> None:
     await db.execute(delete(PasskeyChallenge).where(PasskeyChallenge.admin_id.in_(admin_ids)))
     await db.execute(delete(AdminNotificationReminder).where(AdminNotificationReminder.admin_id.in_(admin_ids)))
     await db.execute(delete(AdminUsageLogs).where(AdminUsageLogs.admin_id.in_(admin_ids)))
+    # Pengu fork: traffic basket volumes belong to the admin too.
+    from app.db.crud.pengu_baskets import forget_admins
+
+    await forget_admins(db, admin_ids)
     await db.execute(delete(Admin).where(Admin.id.in_(admin_ids)))
     await db.commit()

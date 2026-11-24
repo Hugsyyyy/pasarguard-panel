@@ -332,6 +332,27 @@ class BaseOperation:
                     if group_id not in allowed_set and group_id not in grandfathered:
                         await self.raise_error("Group not found", 404)
 
+        # Pengu fork: a used-up traffic basket refuses new users in its groups (groups a user
+        # already has stay, so other edits keep working). Only users being created or edited are
+        # checked: templates are not users, and bulk group edits are a filter + owner tool. The node
+        # payload is filtered by the user's own admin anyway, so nothing leaks through other paths.
+        if (
+            admin is not None
+            and not admin.is_owner
+            and admin.id is not None
+            and isinstance(model, (UserCreate, UserModify))
+            and model.group_ids
+        ):
+            from app.operation.pengu_baskets import used_up_basket_for_groups
+
+            grandfathered = set(existing_group_ids or ())
+            new_ids = [g for g in dict.fromkeys(model.group_ids) if g not in grandfathered]
+            used_up = await used_up_basket_for_groups(db, admin.id, new_ids)
+            if used_up:
+                await self.raise_error(
+                    f"Traffic basket '{used_up}' is used up: buy more volume to add users to its groups", 403
+                )
+
         groups = await get_groups_by_ids(db, unique_ids, load_users=False, load_inbounds=True)
         groups_by_id = {group.id: group for group in groups}
 

@@ -59,6 +59,7 @@ import * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
+import { useMyBaskets } from '@/components/layout/pengu-basket-summary'
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const isRTL = useDirDetection() === 'rtl'
@@ -68,6 +69,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const canReadHosts = canReadResourcePage(admin, 'hosts')
   const canCustomizeHosts = canPersonalizeHosts(admin)
   const canChooseSubPage = canUseSubPages(admin)
+  // Pengu fork: traffic baskets — the owner and admin managers always, others once their panel uses baskets
+  const canManageBaskets = isOwner(admin) || hasPermission(admin, 'admins', 'update')
+  const { data: myBaskets } = useMyBaskets(!!admin && !canManageBaskets)
+  const canSeeBaskets = canManageBaskets || !!myBaskets?.basket_mode
   const canReadGroups = canReadResourcePage(admin, 'groups')
   const canReadAdmins = canReadResourcePage(admin, 'admins')
   const canReadApiKeys = canReadResourcePage(admin, 'api_keys')
@@ -239,6 +244,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       ...(canChooseSubPage
         ? [{ title: 'subPages.title', url: '/subscription-pages', icon: LayoutTemplate }]
         : []),
+      ...(canSeeBaskets ? [{ title: 'trafficBaskets.title', url: '/traffic-baskets', icon: Layers }] : []),
       ...(canReadGroups
         ? [
             {

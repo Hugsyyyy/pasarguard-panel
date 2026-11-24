@@ -1071,6 +1071,10 @@ async def _record_user_usages_impl():
                 await enforce_admin_limits_now(logger=logger)
             except Exception:
                 logger.exception("Failed to enforce admin limits after usage recording")
+            # Pengu fork: per-node usage of basket-mode admins goes to the node's traffic basket.
+            from app.jobs.pengu_basket_usage import charge_baskets
+
+            await charge_baskets(api_params, usage_coefficient)
         if not (await general_settings()).usage.record_node_usage:
             return
 

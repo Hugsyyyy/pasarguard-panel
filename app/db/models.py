@@ -1103,3 +1103,13 @@ class TempKey(Base):
     expires_at: Mapped[dt] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[dt | None] = mapped_column(DateTime(timezone=True), default=None)
     used_by_ip: Mapped[str | None] = mapped_column(String(45), default=None)
+
+
+# Pengu fork: traffic baskets live in their own module (kept out of upstream code).
+from app.db.pengu_baskets_models import (  # noqa: F401
+    AdminBasket,
+    AdminBasketBlock,
+    AdminSharedBasket,
+    TrafficBasket,
+    TrafficBasketGroup,
+)

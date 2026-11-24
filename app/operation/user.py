@@ -1347,7 +1347,12 @@ class UserOperation(BaseOperation):
         return await self._active_next_plan(db, db_user, admin)
 
     async def _set_owner(self, db: AsyncSession, db_user: User, new_admin, admin: AdminDetails) -> UserResponse:
+        old_admin_id = db_user.admin_id
         db_user = await set_owner(db, db_user, new_admin)
+        # Pengu fork: a used-up traffic basket of the old or new owner changes what the nodes get.
+        from app.operation.pengu_baskets import resync_after_owner_change
+
+        await resync_after_owner_change(db, [db_user], {old_admin_id, new_admin.id})
         user = await self.validate_user(db_user)
         logger.info(
             f'User "{user.username}" owner successfully set to "{new_admin.username}" by admin "{admin.username}"'
@@ -1382,7 +1387,12 @@ class UserOperation(BaseOperation):
             db, bulk_users.ids, admin, load_usage_logs=False, scope_action="set_owner"
         )
 
+        old_admin_ids = {db_user.admin_id for db_user in db_users}
         db_users = await bulk_set_owner(db, db_users, new_admin)
+        # Pengu fork: a used-up traffic basket of an old or the new owner changes what the nodes get.
+        from app.operation.pengu_baskets import resync_after_owner_change
+
+        await resync_after_owner_change(db, db_users, old_admin_ids | {new_admin.id})
         users = [await self.validate_user(db_user) for db_user in db_users]
         for user in users:
             logger.info(

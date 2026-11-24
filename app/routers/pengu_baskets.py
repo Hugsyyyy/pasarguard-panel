@@ -13,6 +13,7 @@ from app.core.pengu_baskets import Volume, ambiguous_nodes
 from app.db import AsyncSession, get_db
 from app.db.crud import pengu_baskets as crud
 from app.db.models import Admin, Node
+from app.db.pengu_baskets_models import AdminBasket, AdminBasketBlock, AdminSharedBasket
 from app.models.admin import AdminDetails
 from app.operation import pengu_baskets as ops
 from app.operation.permissions import PermissionDenied, enforce_permission
@@ -220,6 +221,70 @@ async def my_baskets(db: AsyncSession = Depends(get_db), admin: AdminDetails = D
     return await _admin_baskets(db, await _target(db, admin.username))
 
 
+class AllAdminBasketsOut(BaseModel):
+    baskets: list[BasketOut]
+    admins: list[AdminBasketsOut]
+
+
+@router.get("/api/pengu/baskets/admins", response_model=AllAdminBasketsOut)
+async def all_admin_baskets(db: AsyncSession = Depends(get_db), admin: AdminDetails = Depends(get_current)):
+    """Every admin in basket mode with its volumes, in one call (for tools that list many panels)."""
+    _may(admin, "read")
+    definitions = await crud.list_baskets(db)
+    shared_rows = (await db.execute(select(AdminSharedBasket))).scalars().all()
+    if not shared_rows:
+        return AllAdminBasketsOut(
+            baskets=[BasketOut(id=b.id, name=b.name, sort_order=b.sort_order, group_ids=g) for b, g in definitions],
+            admins=[],
+        )
+    ids = [row.admin_id for row in shared_rows]
+    names = dict((await db.execute(select(Admin.id, Admin.username).where(Admin.id.in_(ids)))).all())
+    own: dict[int, dict[int, AdminBasket]] = {}
+    for row in (await db.execute(select(AdminBasket).where(AdminBasket.admin_id.in_(ids)))).scalars().all():
+        own.setdefault(row.admin_id, {})[row.basket_id] = row
+    blocks: dict[int, set[int]] = {}
+    for admin_id, basket_id in (
+        await db.execute(
+            select(AdminBasketBlock.admin_id, AdminBasketBlock.basket_id).where(AdminBasketBlock.admin_id.in_(ids))
+        )
+    ).all():
+        blocks.setdefault(admin_id, set()).add(basket_id)
+    admins = []
+    for shared in shared_rows:
+        if shared.admin_id not in names:
+            continue
+        sv = Volume(shared.data_limit, shared.used_traffic)
+        out = AdminBasketsOut(
+            username=names[shared.admin_id],
+            basket_mode=True,
+            shared=VolumeOut(
+                data_limit=shared.data_limit,
+                used_traffic=shared.used_traffic,
+                remaining=sv.remaining,
+                blocked=bool(shared.blocked),
+            ),
+        )
+        for basket, group_ids in definitions:
+            row = own.get(shared.admin_id, {}).get(basket.id)
+            limit, used = (row.data_limit, row.used_traffic) if row else (0, 0)
+            out.baskets.append(
+                AdminBasketOut(
+                    basket_id=basket.id,
+                    name=basket.name,
+                    group_ids=group_ids,
+                    data_limit=limit,
+                    used_traffic=used,
+                    remaining=Volume(limit, used).remaining,
+                    blocked=basket.id in blocks.get(shared.admin_id, set()),
+                )
+            )
+        admins.append(out)
+    return AllAdminBasketsOut(
+        baskets=[BasketOut(id=b.id, name=b.name, sort_order=b.sort_order, group_ids=g) for b, g in definitions],
+        admins=admins,
+    )
+
+
 @router.get("/api/admin/by-username/{username}/baskets", response_model=AdminBasketsOut)
 async def get_admin_baskets(
     username: str, db: AsyncSession = Depends(get_db), admin: AdminDetails = Depends(get_current)
@@ -246,6 +311,17 @@ async def enable_baskets(username: str, db: AsyncSession = Depends(get_db), admi
     target = await _writable_target(db, admin, username, need_mode=False)
     await crud.enable_basket_mode(db, target)
     await ops.resync_admin_users(db, target.id)
+    return await _admin_baskets(db, target)
+
+
+@router.delete("/api/admin/by-username/{username}/baskets", response_model=AdminBasketsOut)
+async def disable_baskets(
+    username: str, db: AsyncSession = Depends(get_db), admin: AdminDetails = Depends(get_current)
+):
+    """Back to one volume: the admin's data limit gets the same remaining volume (shared + every basket)."""
+    target = await _writable_target(db, admin, username)
+    await crud.disable_basket_mode(db, target)
+    await ops.resync_admin_users_plain(db, target.id)
     return await _admin_baskets(db, target)
 
 

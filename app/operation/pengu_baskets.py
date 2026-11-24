@@ -1,10 +1,14 @@
 """Pengu fork: traffic basket operations that also reach the nodes.
 
-Whenever an admin's blocked baskets change, that admin's users are re-sent to the
-nodes; the node payload drops the tags of blocked baskets (app/node/user.py).
+Whenever an admin's blocked baskets change, ``pending_sync`` is raised in the same
+transaction and the admin's users are re-sent to the nodes; the node payload drops the
+tags of blocked baskets (app/node/user.py). The flag is cleared only after the re-send,
+and the usage job retries every admin still flagged, so a failed delivery is not lost.
 """
 
 from __future__ import annotations
+
+import asyncio
 
 from app.db import AsyncSession, GetDB
 from app.db.crud import pengu_baskets as crud
@@ -16,6 +20,10 @@ logger = get_logger("pengu-baskets")
 
 
 SHARED_NAME = "shared"
+
+# Admins whose re-send is running in this process (the usage job must not start a second one).
+_resyncing: set[int] = set()
+_tasks: set[asyncio.Task] = set()
 
 
 async def used_up_basket_for_groups(db: AsyncSession, admin_id: int, group_ids: list[int]) -> str | None:
@@ -38,10 +46,30 @@ async def used_up_basket_for_groups(db: AsyncSession, admin_id: int, group_ids: 
 
 
 async def resync_admin_users(db: AsyncSession, admin_id: int) -> int:
+    """Re-send the admin's users to the nodes, then clear its ``pending_sync`` flag."""
+    users = await get_admin_users_for_node_sync(db, admin_id)
+    if users:
+        await sync_users(users)
+    await crud.clear_pending_sync(db, admin_id)
+    return len(users)
+
+
+async def resync_admin_users_plain(db: AsyncSession, admin_id: int) -> int:
+    """Re-send the admin's users (no basket flag to clear, e.g. after leaving basket mode)."""
     users = await get_admin_users_for_node_sync(db, admin_id)
     if users:
         await sync_users(users)
     return len(users)
+
+
+async def resync_after_owner_change(db: AsyncSession, users: list, admin_ids: set) -> None:
+    """Users moved between admins: re-send them when the old or new owner has a used-up basket."""
+    if users and await crud.blocked_tags_by_admin(db, [a for a in admin_ids if a is not None]):
+        await sync_users(users)
+
+
+async def is_basket_mode(db: AsyncSession, admin_id: int) -> bool:
+    return await crud.get_shared(db, admin_id) is not None
 
 
 async def redirect_shared_limit(db: AsyncSession, db_admin, modified_admin) -> bool:
@@ -90,12 +118,35 @@ async def resync_all_basket_admins(db: AsyncSession) -> None:
         await resync_admin_users(db, admin_id)
 
 
-async def charge_and_enforce(usage) -> None:
-    """Called by the usage job with admin id -> basket id -> bytes."""
-    if not usage:
+async def _resync_in_background(admin_ids: list[int]) -> None:
+    for admin_id in admin_ids:
+        try:
+            async with GetDB() as db:
+                count = await resync_admin_users(db, admin_id)
+            logger.info("Admin %s: basket blocks changed, %s users re-sent to nodes", admin_id, count)
+        except Exception:
+            logger.exception("Admin %s: re-sending users after a basket change failed; will retry", admin_id)
+        finally:
+            _resyncing.discard(admin_id)
+
+
+def _schedule_resync(admin_ids) -> None:
+    todo = sorted(a for a in set(admin_ids) if a not in _resyncing)
+    if not todo:
         return
+    _resyncing.update(todo)
+    task = asyncio.create_task(_resync_in_background(todo))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
+async def charge_and_enforce(usage) -> None:
+    """Called by the usage job with admin id -> basket key -> bytes.
+
+    Charging is one short locked transaction; re-sending users to the nodes runs outside the
+    job, for admins whose blocks just changed and for any admin still flagged from before.
+    """
     async with GetDB() as db:
-        changed = await crud.charge_usage(db, usage)
-        for admin_id in sorted(changed):
-            count = await resync_admin_users(db, admin_id)
-            logger.info("Admin %s: basket blocks changed by usage, %s users re-sent to nodes", admin_id, count)
+        changed = await crud.charge_usage(db, usage) if usage else set()
+        pending = await crud.pending_sync_admin_ids(db)
+    _schedule_resync(set(changed) | set(pending))

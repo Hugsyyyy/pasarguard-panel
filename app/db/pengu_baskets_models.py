@@ -60,6 +60,8 @@ class AdminSharedBasket(Base):
     data_limit: Mapped[int | None] = mapped_column(BigInteger, default=0, server_default="0", nullable=True)
     used_traffic: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     blocked: Mapped[bool] = mapped_column(default=False, server_default="0")
+    # Blocks changed and the admin's users still have to be re-sent to the nodes (retried until done).
+    pending_sync: Mapped[bool] = mapped_column(default=False, server_default="0")
 
 
 class AdminBasket(Base):

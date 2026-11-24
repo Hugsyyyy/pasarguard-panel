@@ -45,6 +45,7 @@ def upgrade() -> None:
         sa.Column("data_limit", sa.BigInteger(), server_default="0", nullable=True),
         sa.Column("used_traffic", sa.BigInteger(), server_default="0", nullable=False),
         sa.Column("blocked", sa.Boolean(), server_default="0", nullable=False),
+        sa.Column("pending_sync", sa.Boolean(), server_default="0", nullable=False),
         sa.ForeignKeyConstraint(["admin_id"], ["admins.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("admin_id"),
     )
@@ -72,7 +73,26 @@ def upgrade() -> None:
     )
 
 
+RESTORE_LIMITS = """
+UPDATE admins SET data_limit = (
+    SELECT CASE WHEN s.data_limit IS NULL THEN NULL ELSE
+        admins.used_traffic
+        + CASE WHEN s.data_limit > s.used_traffic THEN s.data_limit - s.used_traffic ELSE 0 END
+        + COALESCE((
+            SELECT SUM(CASE WHEN b.data_limit > b.used_traffic THEN b.data_limit - b.used_traffic ELSE 0 END)
+            FROM pengu_admin_baskets b WHERE b.admin_id = s.admin_id
+        ), 0)
+    END
+    FROM pengu_admin_shared_baskets s WHERE s.admin_id = admins.id
+)
+WHERE id IN (SELECT admin_id FROM pengu_admin_shared_baskets)
+"""
+
+
 def downgrade() -> None:
+    # Basket-mode admins have data_limit NULL (unlimited) upstream: give each one back a single
+    # limit with the same remaining volume (shared + every basket) before the tables go.
+    op.execute(sa.text(RESTORE_LIMITS))
     op.drop_table("pengu_admin_basket_blocks")
     op.drop_index("ix_pengu_admin_baskets_basket_id", table_name="pengu_admin_baskets")
     op.drop_index("ix_pengu_admin_baskets_admin_id", table_name="pengu_admin_baskets")

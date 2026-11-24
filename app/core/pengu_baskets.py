@@ -32,7 +32,7 @@ class Volume:
 
 
 def charge(
-    usage: Mapping[int | None, int],
+    usage: Mapping,
     own: Mapping[int, Volume],
     shared: Volume,
 ) -> tuple[dict[int, int], int]:
@@ -40,23 +40,28 @@ def charge(
 
     Each basket's usage fills that basket's own remaining volume first; the rest goes to
     the shared volume (which may then exceed its limit: that is real, already-used traffic).
-    ``usage`` keys are basket ids, or ``NO_BASKET`` for tags outside every basket.
+    ``usage`` keys are basket ids, ``NO_BASKET`` for tags outside every basket, or a tuple of
+    basket ids for a node that serves several baskets: their own volumes are drained in order.
     """
     own_increments: dict[int, int] = {}
     shared_increment = 0
-    for basket_id, amount in usage.items():
+    for key, amount in usage.items():
         amount = int(amount)
         if amount <= 0:
             continue
-        taken = 0
-        volume = own.get(basket_id) if basket_id is not NO_BASKET else None
-        if volume is not None:
+        baskets = key if isinstance(key, tuple) else (() if key is NO_BASKET else (key,))
+        left = amount
+        for basket_id in baskets:
+            volume = own.get(basket_id)
+            if volume is None or left <= 0:
+                continue
             already = own_increments.get(basket_id, 0)
-            room = amount if volume.limit is None else max(volume.limit - volume.used - already, 0)
-            taken = min(amount, room)
+            room = left if volume.limit is None else max(volume.limit - volume.used - already, 0)
+            taken = min(left, room)
             if taken:
                 own_increments[basket_id] = already + taken
-        shared_increment += amount - taken
+                left -= taken
+        shared_increment += left
     return own_increments, shared_increment
 
 
@@ -81,18 +86,21 @@ def blocked_baskets(
     return blocked, True
 
 
-def node_basket(node_tags: Iterable[str], tag_baskets: Mapping[str, int]) -> int | None:
-    """The basket a node's usage belongs to.
+def node_basket(node_tags: Iterable[str], tag_baskets: Mapping[str, int]):
+    """The basket key a node's usage is charged to.
 
     ``tag_baskets`` maps an inbound tag to its basket. Tags outside every basket are
-    ignored. A node whose tags fall in exactly one basket belongs to it; a node with
-    no basketed tag, or with tags of several baskets (its per-user stats cannot be
-    split by tag), is charged to the shared volume (``NO_BASKET``).
+    ignored. A node whose tags fall in exactly one basket belongs to it; a node with no
+    basketed tag goes to the shared volume (``NO_BASKET``). A node with tags of several
+    baskets (its per-user stats cannot be split by tag) gets the tuple of those baskets:
+    their own volumes are drained in order, then the shared one, so it is never free.
     """
-    baskets = {tag_baskets[tag] for tag in node_tags if tag in tag_baskets}
+    baskets = sorted({tag_baskets[tag] for tag in node_tags if tag in tag_baskets})
     if len(baskets) == 1:
-        return next(iter(baskets))
-    return NO_BASKET
+        return baskets[0]
+    if not baskets:
+        return NO_BASKET
+    return tuple(baskets)
 
 
 def ambiguous_nodes(node_tags: Mapping[int, Iterable[str]], tag_baskets: Mapping[str, int]) -> list[int]:

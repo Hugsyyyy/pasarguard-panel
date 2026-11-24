@@ -77,8 +77,8 @@ def test_node_basket():
     assert node_basket(["turkey-wg-1"], tag_baskets) == WG
     assert node_basket(["unknown"], tag_baskets) is NO_BASKET
     assert node_basket([], tag_baskets) is NO_BASKET
-    # tags of two baskets on one node: stats cannot be split, so the shared volume pays
-    assert node_basket(["Netherland", "turkey-wg-1"], tag_baskets) is NO_BASKET
+    # tags of two baskets on one node: stats cannot be split, so both own volumes are drained in order
+    assert node_basket(["turkey-wg-1", "Netherland"], tag_baskets) == (XRAY, WG)
     assert ambiguous_nodes({1: ["Netherland", "turkey-wg-1"], 2: ["Netherland"]}, tag_baskets) == [1]
 
 
@@ -89,3 +89,10 @@ def test_allowed_tags():
     assert allowed_tags(tags, tag_baskets, {WG}, False) == ["x1", "x2", "loose"]
     assert allowed_tags(tags, tag_baskets, {WG}, True) == ["x1", "x2"]
     assert allowed_tags(tags, tag_baskets, {XRAY, WG}, True) == []
+
+
+def test_charge_node_of_several_baskets_drains_own_volumes_in_order_then_shared():
+    own = {XRAY: Volume(3, 0), WG: Volume(4, 2)}
+    own_inc, shared_inc = charge({(XRAY, WG): 10}, own, Volume(0, 0))
+    assert own_inc == {XRAY: 3, WG: 2}
+    assert shared_inc == 5

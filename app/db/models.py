@@ -1106,7 +1106,7 @@ class TempKey(Base):
 
 
 # Pengu fork: traffic baskets live in their own module (kept out of upstream code).
-from app.db.pengu_baskets_models import (  # noqa: E402, F401
+from app.db.pengu_baskets_models import (  # noqa: F401
     AdminBasket,
     AdminBasketBlock,
     AdminSharedBasket,

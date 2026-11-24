@@ -142,6 +142,13 @@ def test_enabling_keeps_the_old_volume_as_shared_and_lifts_the_upstream_limit(ac
 
         assert _run(_upstream_limit(operator["username"])) is None  # upstream never limits a basket-mode admin
 
+        overview = client.get("/api/pengu/baskets/admins", headers=world.headers)
+        assert overview.status_code == status.HTTP_200_OK, overview.text
+        listed = [a for a in overview.json()["admins"] if a["username"] == operator["username"]]
+        assert listed and listed[0]["shared"]["data_limit"] == 10 * GB
+        assert {b["basket_id"] for b in listed[0]["baskets"]} >= {world.xray["id"], world.wg["id"]}
+        assert client.get("/api/pengu/baskets/admins", headers=_login(operator)).status_code == 403
+
         mine = client.get("/api/pengu/baskets/me", headers=_login(operator))
         assert mine.status_code == status.HTTP_200_OK
         assert mine.json()["shared"]["remaining"] == 10 * GB
@@ -305,6 +312,109 @@ def test_admins_without_baskets_are_untouched(access_token):
             json={"bytes": GB},
         )
         assert r.status_code == status.HTTP_409_CONFLICT
+    finally:
+        delete_admin(access_token, operator["username"])
+        world.cleanup(access_token)
+
+
+def test_shared_volume_add_and_set_and_leaving_basket_mode(access_token):
+    """Review finding: shared/add answered 500 after committing (stale row). Also leaving basket mode."""
+    world = _World(access_token)
+    operator = _operator(access_token, 4 * GB)
+    try:
+        world.make_baskets()
+        name = operator["username"]
+        base = f"/api/admin/by-username/{name}/baskets"
+        client.post(f"{base}/enable", headers=world.headers)
+        admin_id = _run(_admin_id(name))
+        _run(_charge(admin_id, {None: 5 * GB}))  # more than the shared 4 GB: everything outside baskets is cut
+        state = client.get(base, headers=world.headers).json()
+        assert state["shared"]["blocked"] is True
+
+        r = client.post(f"{base}/shared/add", headers=world.headers, json={"bytes": 3 * GB})
+        assert r.status_code == status.HTTP_200_OK, r.text
+        assert r.json()["shared"]["data_limit"] == 7 * GB
+        assert r.json()["shared"]["blocked"] is False
+        r = client.put(f"{base}/shared", headers=world.headers, json={"data_limit": None})
+        assert r.status_code == status.HTTP_200_OK, r.text
+        assert r.json()["shared"]["data_limit"] is None
+        r = client.put(f"{base}/shared", headers=world.headers, json={"data_limit": 6 * GB})
+        assert r.json()["shared"]["data_limit"] == 6 * GB
+
+        client.put(f"{base}/{world.wg['id']}", headers=world.headers, json={"data_limit": 2 * GB})
+        # leaving basket mode: one limit with the same remaining volume (1 GB shared + 2 GB WireGuard)
+        r = client.delete(base, headers=world.headers)
+        assert r.status_code == status.HTTP_200_OK, r.text
+        assert r.json()["basket_mode"] is False
+        limit = _run(_upstream_limit(name))
+        used = client.get("/api/admins", params={"usernames": [name]}, headers=world.headers).json()["admins"][0][
+            "used_traffic"
+        ]
+        assert limit == used + 3 * GB
+    finally:
+        delete_admin(access_token, operator["username"])
+        world.cleanup(access_token)
+
+
+def test_admin_cannot_lift_own_shared_volume_through_the_admin_api(access_token):
+    """Review finding: data_limit 0 (= unlimited) slipped past the upstream self-check in basket mode."""
+    world = _World(access_token)
+    role = client.get("/api/admin-roles", headers=world.headers)
+    operator = _operator(access_token, GB)
+    try:
+        world.make_baskets()
+        client.post(f"/api/admin/by-username/{operator['username']}/baskets/enable", headers=world.headers)
+        headers = _login(operator)
+        for value in (0, 100 * GB):
+            r = client.put(f"/api/admin/{operator['username']}", headers=headers, json={"data_limit": value})
+            assert r.status_code in (status.HTTP_403_FORBIDDEN,), (value, r.status_code, r.text)
+        state = client.get(f"/api/admin/by-username/{operator['username']}/baskets", headers=world.headers).json()
+        assert state["shared"]["data_limit"] == GB
+        assert role.status_code in (200, 403)
+    finally:
+        delete_admin(access_token, operator["username"])
+        world.cleanup(access_token)
+
+
+def test_bulk_usage_reset_also_resets_baskets(access_token):
+    world = _World(access_token)
+    operator = _operator(access_token, GB)
+    try:
+        world.make_baskets()
+        name = operator["username"]
+        client.post(f"/api/admin/by-username/{name}/baskets/enable", headers=world.headers)
+        admin_id = _run(_admin_id(name))
+        _run(_charge(admin_id, {world.wg["id"]: 2 * GB}))
+        r = client.post("/api/admins/bulk/reset", headers=world.headers, json={"ids": [admin_id]})
+        assert r.status_code == status.HTTP_200_OK, r.text
+        state = client.get(f"/api/admin/by-username/{name}/baskets", headers=world.headers).json()
+        assert state["shared"]["used_traffic"] == 0
+        assert state["shared"]["blocked"] is False
+    finally:
+        delete_admin(access_token, operator["username"])
+        world.cleanup(access_token)
+
+
+def test_usage_of_a_node_with_several_baskets_is_never_free(access_token):
+    """Review finding: such usage went only to the shared volume, so with shared empty it was unlimited."""
+    world = _World(access_token)
+    operator = _operator(access_token, GB)
+    try:
+        world.make_baskets()
+        name = operator["username"]
+        base = f"/api/admin/by-username/{name}/baskets"
+        client.post(f"{base}/enable", headers=world.headers)
+        client.put(f"{base}/{world.xray['id']}", headers=world.headers, json={"data_limit": 2 * GB})
+        client.put(f"{base}/{world.wg['id']}", headers=world.headers, json={"data_limit": 2 * GB})
+        admin_id = _run(_admin_id(name))
+        key = tuple(sorted([world.xray["id"], world.wg["id"]]))
+        _run(_charge(admin_id, {key: 6 * GB}))
+        state = client.get(base, headers=world.headers).json()
+        by_id = {b["basket_id"]: b for b in state["baskets"]}
+        assert by_id[world.xray["id"]]["used_traffic"] == 2 * GB
+        assert by_id[world.wg["id"]]["used_traffic"] == 2 * GB
+        assert state["shared"]["used_traffic"] == 2 * GB
+        assert by_id[world.xray["id"]]["blocked"] and by_id[world.wg["id"]]["blocked"]
     finally:
         delete_admin(access_token, operator["username"])
         world.cleanup(access_token)

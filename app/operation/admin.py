@@ -157,7 +157,17 @@ class AdminOperation(BaseOperation):
 
         # Pengu fork: for an admin in traffic-basket mode the data limit is its shared basket;
         # upstream's own limit stays off so a whole-admin limit never fires.
-        from app.operation.pengu_baskets import apply_blocks, redirect_shared_limit
+        from app.operation.pengu_baskets import apply_blocks, is_basket_mode, redirect_shared_limit
+
+        # The upstream self-check above compares with data_limit, which is None in basket mode:
+        # refuse any self-sent data limit here, or an admin could make its own shared volume unlimited.
+        if (
+            not current_admin.is_owner
+            and is_self
+            and modified_admin.data_limit is not None
+            and await is_basket_mode(db, db_admin.id)
+        ):
+            await self.raise_error(message="You're not allowed to change your own data limit.", code=403)
 
         basket_mode = await redirect_shared_limit(db, db_admin, modified_admin)
 
@@ -499,6 +509,10 @@ class AdminOperation(BaseOperation):
             old_users_sync_blocked = await admin_users_sync_blocked(db_admin)
             db_admin = await reset_admin_usage(db, db_admin=db_admin)
             await sync_admin_users_for_block_transition(db, db_admin, old_users_sync_blocked)
+            # Pengu fork: the traffic baskets start again from zero too.
+            from app.operation.pengu_baskets import reset_basket_usage
+
+            await reset_basket_usage(db, db_admin.id)
             reseted_admin = build_admin_details(db_admin, include_loaded_metrics=True)
             asyncio.create_task(notification.admin_usage_reset(reseted_admin, admin.username))
             logger.info(f'Admin "{db_admin.username}" usage has been reset by admin "{admin.username}"')

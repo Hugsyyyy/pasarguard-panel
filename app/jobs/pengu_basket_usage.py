@@ -7,6 +7,7 @@ admins in basket mode are charged here; nothing changes for anyone else.
 
 from __future__ import annotations
 
+import time
 from collections import defaultdict
 
 from sqlalchemy import select
@@ -22,6 +23,21 @@ from app.utils.logger import get_logger
 logger = get_logger("pengu-baskets")
 
 _LOOKUP_BATCH = 2000
+_NODE_TAGS_TTL = 60.0
+_node_tags_cache: tuple[float, dict[int, list[str]]] | None = None
+
+
+async def _cached_node_tags(node_ids: list[int]) -> dict[int, list[str]]:
+    """Node tags change only when cores or nodes are edited: read them at most once a minute."""
+    global _node_tags_cache
+    now = time.monotonic()
+    if _node_tags_cache is not None and now - _node_tags_cache[0] < _NODE_TAGS_TTL:
+        cached = _node_tags_cache[1]
+        if all(node_id in cached for node_id in node_ids):
+            return cached
+    fresh = await _node_tags(node_ids)
+    _node_tags_cache = (now, fresh)
+    return fresh
 
 
 async def _node_tags(node_ids: list[int]) -> dict[int, list[str]]:
@@ -38,12 +54,12 @@ async def _node_tags(node_ids: list[int]) -> dict[int, list[str]]:
     return out
 
 
-async def basket_usage(api_params: dict, usage_coefficient: dict) -> dict[int, dict[int | None, int]]:
-    """admin id -> basket id (None = outside every basket) -> bytes, for admins in basket mode."""
+async def basket_usage(api_params: dict, usage_coefficient: dict) -> dict | None:
+    """admin id -> basket key -> bytes for admins in basket mode, or None when no admin is in basket mode."""
     async with GetDB() as db:
         mode_admins = await basket_mode_admin_ids(db)
         if not mode_admins:
-            return {}
+            return None
         tag_baskets = await tag_basket_map(db)
         uids = {int(p["uid"]) for params in api_params.values() for p in params or []}
         user_admin: dict[int, int] = {}
@@ -59,7 +75,7 @@ async def basket_usage(api_params: dict, usage_coefficient: dict) -> dict[int, d
     if not user_admin:
         return {}
 
-    node_tags = await _node_tags([node_id for node_id, params in api_params.items() if params])
+    node_tags = await _cached_node_tags([node_id for node_id, params in api_params.items() if params])
     usage: dict[int, dict[int | None, int]] = defaultdict(lambda: defaultdict(int))
     for node_id, params in api_params.items():
         if not params:
@@ -77,7 +93,7 @@ async def charge_baskets(api_params: dict, usage_coefficient: dict) -> None:
     """Never raises: a failure here must not stop upstream's own accounting."""
     try:
         usage = await basket_usage(api_params, usage_coefficient)
-        if usage:
+        if usage is not None:
             await charge_and_enforce(usage)
     except Exception:
         logger.exception("Failed to charge traffic basket usage")

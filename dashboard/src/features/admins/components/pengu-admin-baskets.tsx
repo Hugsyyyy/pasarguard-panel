@@ -1,20 +1,20 @@
-// Pengu fork: traffic baskets inside the Admins page. In the admin dialog the data limit field is the
-// overall volume (good for every service) and one volume field per basket (e.g. Xray / WireGuard) sits
-// under it, saved with the dialog. The admins list shows each basket's usage under the data usage bar.
+// Pengu fork: traffic baskets. In the admin dialog the data limit field is the overall volume (good for
+// every service) and sits in one box with a volume field per basket (e.g. Xray / WireGuard), saved with
+// the dialog. The admins list shows each basket's usage under the data usage bar. The owner defines the
+// baskets under Settings (pages/_dashboard.settings.baskets.tsx).
 import UsageSliderCompact from '@/components/common/usage-slider-compact'
 import { DecimalInput } from '@/components/common/decimal-input'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getGroupsSimple } from '@/service/api'
 import { fetcher } from '@/service/http'
 import { bytesToFormGigabytes, formatBytes, gbToBytes } from '@/utils/formatByte'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Layers, Pencil, Plus, Save, Settings2, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Layers, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -159,46 +159,32 @@ function GbField({ label, value, onChange, used }: { label: string; value: numbe
   )
 }
 
-/** Rendered inside the admin dialog's main grid, right under the data limit field. */
-export function AdminBasketFields({ state, isOwner }: { state: AdminBasketsState; isOwner: boolean }) {
+/**
+ * Replaces the admin dialog's data limit field when baskets exist: one box with the data limit
+ * (the overall volume, passed in as `dataLimitField`) and one volume field per basket under it.
+ */
+export function AdminBasketFields({ state, dataLimitField }: { state: AdminBasketsState; dataLimitField: React.ReactNode }) {
   const { t } = useTranslation()
-  const [manageOpen, setManageOpen] = useState(false)
-  const manage = isOwner && (
-    <>
-      <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setManageOpen(true)}>
-        <Settings2 className="h-3.5 w-3.5" />
-        {t('trafficBaskets.manage', { defaultValue: 'Define baskets' })}
-      </Button>
-      <BasketDefinitionsDialog open={manageOpen} onOpenChange={setManageOpen} />
-    </>
-  )
-
-  if (state.loading) return <Skeleton className="h-16 sm:col-span-2" />
-  if (!state.visible || !state.draft) {
-    // Owner with no basket defined yet: only the way in.
-    return isOwner && state.definitionsLoaded && state.baskets.length === 0 ? <div className="sm:col-span-2">{manage}</div> : null
-  }
+  if (!state.visible || !state.draft) return <>{dataLimitField}</>
   const { draft, current } = state
   const usedOf = (id: number) => current?.baskets.find(b => b.basket_id === id)?.used_traffic
   return (
     <div className="space-y-3 rounded-md border p-3 sm:col-span-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-2 text-sm font-medium">
-          <Layers className="h-4 w-4" />
-          {t('trafficBaskets.perService', { defaultValue: 'Volume per service' })}
-        </span>
-        {manage}
-      </div>
-      <p className="text-muted-foreground text-xs leading-5">
-        {t('trafficBaskets.perServiceHint', {
-          defaultValue: 'Data limit above is the overall volume, good for every service. Each service uses its own volume first, then the overall one; when both run out only that service stops.',
-        })}
-      </p>
+      <span className="flex items-center gap-2 text-sm font-medium">
+        <Layers className="h-4 w-4" />
+        {t('trafficBaskets.volumes', { defaultValue: 'Volumes' })}
+      </span>
       <div className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">{dataLimitField}</div>
         {state.baskets.map(b => (
           <GbField key={b.id} label={b.name} value={draft[b.id] ?? 0} onChange={v => state.setBasket(b.id, v)} used={current?.basket_mode ? usedOf(b.id) : undefined} />
         ))}
       </div>
+      <p className="text-muted-foreground text-xs leading-5">
+        {t('trafficBaskets.perServiceHint', {
+          defaultValue: 'Data limit is the overall volume, good for every service. Each service uses its own volume first, then the overall one; when both run out only that service stops.',
+        })}
+      </p>
     </div>
   )
 }
@@ -299,11 +285,12 @@ function BasketEditor({ groups, initial, onDone }: { groups: { id: number; name:
   )
 }
 
-function BasketDefinitionsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+/** Settings → Volume categories (owner): which groups make up each basket. */
+export function BasketDefinitionsPanel() {
   const { t } = useTranslation()
   const client = useQueryClient()
-  const { data, isLoading } = useBasketDefinitions(open)
-  const { data: groupData } = useQuery({ queryKey: ['groups-simple-baskets'], queryFn: () => getGroupsSimple({ all: true }), enabled: open })
+  const { data, isLoading } = useBasketDefinitions()
+  const { data: groupData } = useQuery({ queryKey: ['groups-simple-baskets'], queryFn: () => getGroupsSimple({ all: true }) })
   const groups = groupData?.groups ?? []
   const groupName = useMemo(() => new Map(groups.map(g => [g.id, g.name])), [groups])
   const [editing, setEditing] = useState<number | 'new' | null>(null)
@@ -323,20 +310,13 @@ function BasketDefinitionsDialog({ open, onOpenChange }: { open: boolean; onOpen
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Layers className="h-5 w-5" />
-            {t('trafficBaskets.definitions', { defaultValue: 'Baskets' })}
-          </DialogTitle>
-          <DialogDescription>
-            {t('trafficBaskets.definitionsHint', {
-              defaultValue:
-                'A basket is a set of groups. Usage on a node is charged to the basket of the groups it serves: first the admin’s own volume in that basket, then its shared volume. When both are empty, only that basket’s configs stop working for the admin’s users.',
-            })}
-          </DialogDescription>
-        </DialogHeader>
+    <div className="space-y-4">
+        <p className="text-muted-foreground text-sm leading-6">
+          {t('trafficBaskets.definitionsHint', {
+            defaultValue:
+              'A basket is a set of groups. Usage on a node is charged to the basket of the groups it serves: first the admin’s own volume in that basket, then its shared volume. When both are empty, only that basket’s configs stop working for the admin’s users.',
+          })}
+        </p>
         {isLoading ? (
           <Skeleton className="h-24" />
         ) : (
@@ -409,7 +389,6 @@ function BasketDefinitionsDialog({ open, onOpenChange }: { open: boolean; onOpen
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </DialogContent>
-    </Dialog>
+    </div>
   )
 }

@@ -3,12 +3,12 @@ import { useAdmin } from '@/hooks/use-admin'
 import { cn } from '@/lib/utils'
 import { getGetGeneralSettingsQueryKey, getGetSettingsQueryKey, useGetSettings, useModifySettings } from '@/service/api'
 import { useQueryClient } from '@tanstack/react-query'
-import { Bell, Database, Fingerprint, ListTodo, LucideIcon, Palette, Send, Settings as SettingsIcon, Webhook } from 'lucide-react'
+import { Bell, Database, Fingerprint, Layers, ListTodo, LucideIcon, Palette, Send, Settings as SettingsIcon, Webhook } from 'lucide-react'
 import { createContext, useCallback, useContext, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
-import { hasPermission } from '@/utils/rbac'
+import { hasPermission, isOwner } from '@/utils/rbac'
 
 interface Tab {
   id: string
@@ -44,6 +44,8 @@ const allTabs: Tab[] = [
   { id: 'telegram', label: 'settings.telegram.title', icon: Send, url: '/settings/telegram' },
   { id: 'webhook', label: 'settings.webhook.title', icon: Webhook, url: '/settings/webhook' },
   { id: 'cleanup', label: 'settings.cleanup.title', icon: Database, url: '/settings/cleanup' },
+  // Pengu fork: traffic baskets (owner only)
+  { id: 'baskets', label: 'settings.baskets.title', icon: Layers, url: '/settings/baskets' },
   { id: 'theme', label: 'theme.title', icon: Palette, url: '/settings/theme' },
 ]
 
@@ -57,6 +59,7 @@ export default function Settings() {
   const canReadGeneral = hasPermission(admin, 'settings', 'read_general') && canUpdateSettings
   const tabs = allTabs.filter(tab => {
     if (tab.id === 'theme') return true
+    if (tab.id === 'baskets') return isOwner(admin)
     if (tab.id === 'general') return canReadGeneral
     return canReadSettings
   })

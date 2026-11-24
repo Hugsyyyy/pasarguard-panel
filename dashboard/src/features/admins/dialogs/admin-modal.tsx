@@ -20,7 +20,8 @@ import type { AdminDetails, RoleLimits } from '@/service/api'
 import { builtInVariableKeys, normalizeCustomVariablesForPayload } from '@/features/subscriptions/components/subscription-settings-schema'
 import { upsertAdminInAdminsCache } from '@/utils/adminsCache'
 import { removeAuthToken } from '@/utils/authStorage'
-import { hasPermission } from '@/utils/rbac'
+import { hasPermission, isOwner } from '@/utils/rbac'
+import { AdminBasketFields, useAdminBaskets } from '@/features/admins/components/pengu-admin-baskets'
 import { bytesToFormGigabytes, formatBytes, gbToBytes } from '@/utils/formatByte'
 import { useQueryClient } from '@tanstack/react-query'
 import { Bell, IdCard, KeyRound, LoaderCircle, Pencil, Plus, Sliders, Trash2, UserCog } from 'lucide-react'
@@ -157,6 +158,21 @@ export default function AdminModal({ isDialogOpen, onOpenChange, editingAdminId,
 
   // Accordion: only one section open at a time
   const [openSection, setOpenSection] = useState<string | undefined>(undefined)
+  // Pengu fork: traffic baskets — the data limit is the overall volume, one volume per basket below it.
+  const currentIsOwner = isOwner(currentAdminDetails as any)
+  const basketState = useAdminBaskets({
+    open: isDialogOpen,
+    username: editingAdmin ? form.getValues('username') || null : null,
+    canManage: (currentIsOwner || hasPermission(currentAdminDetails, 'admins', 'update')) && !(editingAdmin && selectedRoleId === 1) && (currentIsOwner || !isEditingCurrentAdmin),
+    onShared: bytes => form.resetField('data_limit', { defaultValue: bytes }),
+  })
+  const applyBaskets = async (username: string) => {
+    try {
+      await basketState.apply(username)
+    } catch (error: any) {
+      toast.error(t('trafficBaskets.saveFailed', { defaultValue: 'Could not save' }), { description: error?.data?.detail || error?.message || String(error) })
+    }
+  }
 
   // Watch notification enable fields
   const watchedNotificationEnable = useWatch({ control: form.control, name: 'notification_enable' })
@@ -275,6 +291,7 @@ export default function AdminModal({ isDialogOpen, onOpenChange, editingAdminId,
           data: editData,
         })
         upsertAdminInAdminsCache(queryClient, updatedAdmin as unknown as AdminDetails, { allowInsert: true })
+        await applyBaskets(values.username)
         if (passwordChanged && isEditingCurrentAdmin) {
           toast.success(t('admins.passwordChangedTitle', { defaultValue: 'Password changed' }), {
             description: t('admins.passwordChangedLogout', { defaultValue: 'Please sign in again with your new password.' }),
@@ -316,6 +333,7 @@ export default function AdminModal({ isDialogOpen, onOpenChange, editingAdminId,
           data: createData,
         })
         upsertAdminInAdminsCache(queryClient, createdAdmin as unknown as AdminDetails, { allowInsert: true })
+        await applyBaskets(values.username)
         toast.success(
           t('admins.createSuccess', {
             name: values.username,
@@ -479,6 +497,7 @@ export default function AdminModal({ isDialogOpen, onOpenChange, editingAdminId,
                   )}
                 />
                 <AdminDataLimitField form={form} />
+                <AdminBasketFields state={basketState} isOwner={currentIsOwner} />
               </div>
 
               {/* Advanced settings: collapsed by default */}

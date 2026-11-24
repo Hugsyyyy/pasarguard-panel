@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { isOwner, roleLabel } from '@/utils/rbac'
-import UsageSliderCompact from '@/components/common/usage-slider-compact'
+import { AdminUsageCell } from '@/features/admins/components/pengu-admin-baskets'
 
 interface DataTableProps<TData extends AdminDetails> {
   columns: ColumnDef<TData, any>[]
@@ -186,7 +186,7 @@ const ExpandedRowContent = memo(
             )}
           </div>
         </div>
-        <UsageSliderCompact isMobile status={getAdminStatus(row)} total={row.data_limit} totalUsedTraffic={row.lifetime_used_traffic ?? undefined} used={row.used_traffic || 0} />
+        <AdminUsageCell isMobile username={row.username} status={getAdminStatus(row)} dataLimit={row.data_limit} lifetimeUsed={row.lifetime_used_traffic ?? undefined} used={row.used_traffic || 0} />
       </div>
     )
   },

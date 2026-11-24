@@ -28,7 +28,6 @@ const Groups = lazyWithChunkRecovery(() => import('../pages/_dashboard.groups'))
 const Hosts = lazyWithChunkRecovery(() => import('../pages/_dashboard.hosts'))
 const HostPreferences = lazyWithChunkRecovery(() => import('../pages/_dashboard.host-preferences'))
 const SubscriptionPages = lazyWithChunkRecovery(() => import('../pages/_dashboard.subscription-pages'))
-const TrafficBaskets = lazyWithChunkRecovery(() => import('../pages/_dashboard.traffic-baskets'))
 const Nodes = lazyWithChunkRecovery(() => import('../pages/_dashboard.nodes'))
 const NodesPage = lazyWithChunkRecovery(() => import('../pages/_dashboard.nodes._index'))
 const NodeLogs = lazyWithChunkRecovery(() => import('../pages/_dashboard.nodes.logs'))
@@ -152,14 +151,6 @@ export const router = createHashRouter([
         element: (
           <Suspense fallback={<LoadingSpinner />}>
             <SubscriptionPages />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/traffic-baskets',
-        element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <TrafficBaskets />
           </Suspense>
         ),
       },

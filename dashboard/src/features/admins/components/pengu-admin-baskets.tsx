@@ -144,7 +144,7 @@ function GbField({ label, value, onChange, used }: { label: string; value: numbe
         <DecimalInput
           placeholder="0"
           value={value ? bytesToFormGigabytes(value) : null}
-          onValueChange={v => onChange(v == null ? 0 : gbToBytes(v))}
+          onValueChange={v => onChange(v == null ? 0 : (gbToBytes(v) ?? 0))}
           emptyValue={undefined}
           className="pr-10"
         />

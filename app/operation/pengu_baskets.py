@@ -45,6 +45,19 @@ async def used_up_basket_for_groups(db: AsyncSession, admin_id: int, group_ids: 
     return None
 
 
+async def hidden_group_ids(db: AsyncSession, admin) -> set[int]:
+    """Groups a reseller cannot use right now, so its group lists leave them out: the groups of
+    its used-up baskets (own volume and shared volume both empty, e.g. no WireGuard volume at
+    all). The owner sees every group. Users already in such a group keep it."""
+    admin_id = getattr(admin, "id", None)
+    if admin_id is None or getattr(admin, "is_owner", False):
+        return set()
+    blocked, _ = await crud.blocked_state(db, admin_id)
+    if not blocked:
+        return set()
+    return {group_id for group_id, basket_id in (await crud.group_basket_map(db)).items() if basket_id in blocked}
+
+
 async def resync_admin_users(db: AsyncSession, admin_id: int) -> int:
     """Re-send the admin's users to the nodes, then clear its ``pending_sync`` flag."""
     users = await get_admin_users_for_node_sync(db, admin_id)

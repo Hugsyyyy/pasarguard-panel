@@ -26,7 +26,7 @@ import { Input } from '@/components/ui/input'
 import { LoaderCircle, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { BasketSummary } from '@/components/layout/pengu-basket-summary'
+import { BasketRemaining, BasketSummary } from '@/components/layout/pengu-basket-summary'
 
 type EffectiveLimits = {
   dataLimit: number | null
@@ -176,6 +176,8 @@ export function NavUser({
 
   // Expanded state - full dropdown
   return (
+    <>
+      {admin && !isOwner(admin) && <BasketRemaining />}
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
@@ -271,6 +273,7 @@ export function NavUser({
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
+    </>
   )
 }
 

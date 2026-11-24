@@ -65,12 +65,14 @@ export type AdminBasketsState = ReturnType<typeof useAdminBaskets>
 
 /**
  * Per-basket volumes of the admin being edited (or created), kept as a draft until the dialog is saved.
- * The dialog's own data limit field is the overall (shared) volume: for an admin in basket mode the
- * panel stores a sent data limit as its shared volume. `onShared` puts that value into the form.
- * Giving any basket a volume puts the admin in basket mode (its data limit becomes the shared volume,
- * so nothing changes for its users); with every basket at 0 the two modes behave the same.
+ *
+ * The overall (shared) volume is part of the same draft once the admin is in basket mode, or about to
+ * be (some basket gets a volume): then the box shows its own overall field, where 0 is a real zero
+ * and "unlimited" is a separate switch, and the dialog must not send its upstream data limit (upstream
+ * reads 0 as unlimited). `ownsOverall` tells the dialog that. `dataLimit` reads the upstream field, the
+ * starting overall volume of an admin that is not in basket mode yet.
  */
-export function useAdminBaskets({ open, username, canManage, onShared }: { open: boolean; username: string | null; canManage: boolean; onShared: (bytes: number | null) => void }) {
+export function useAdminBaskets({ open, username, canManage, dataLimit }: { open: boolean; username: string | null; canManage: boolean; dataLimit: () => number | null }) {
   const client = useQueryClient()
   const definitions = useBasketDefinitions(open && canManage)
   const current = useQuery({
@@ -80,15 +82,18 @@ export function useAdminBaskets({ open, username, canManage, onShared }: { open:
     retry: false,
   })
   const [draft, setDraft] = useState<Record<number, number> | null>(null)
+  // bytes; null = unlimited; undefined = not taken over yet (the upstream field still decides)
+  const [overall, setOverallState] = useState<number | null | undefined>(undefined)
   const loadedFor = useRef<string | null>(null)
-  const onSharedRef = useRef(onShared)
-  onSharedRef.current = onShared
+  const dataLimitRef = useRef(dataLimit)
+  dataLimitRef.current = dataLimit
 
   // (Re)start the draft from the server state each time the dialog opens for an admin.
   useEffect(() => {
     if (!open) {
       loadedFor.current = null
       setDraft(null)
+      setOverallState(undefined)
       return
     }
     const key = username ?? '<new>'
@@ -96,41 +101,59 @@ export function useAdminBaskets({ open, username, canManage, onShared }: { open:
     if (username && !current.data) return
     loadedFor.current = key
     const data = current.data
-    if (data?.basket_mode) onSharedRef.current(data.shared?.data_limit ?? null)
+    setOverallState(data?.basket_mode ? (data.shared?.data_limit ?? null) : undefined)
     setDraft(Object.fromEntries((data?.baskets ?? []).map(b => [b.basket_id, b.data_limit ?? 0])))
   }, [open, username, current.data])
 
   const baskets = definitions.data?.baskets ?? []
   const visible = canManage && baskets.length > 0 && !!draft
+  const inMode = !!current.data?.basket_mode
+  const ownsOverall = visible && (inMode || Object.values(draft ?? {}).some(v => v > 0))
 
-  const setBasket = useCallback((id: number, bytes: number) => setDraft(d => ({ ...(d ?? {}), [id]: bytes })), [])
+  // The upstream data limit is unlimited when empty or 0.
+  const upstreamOverall = () => {
+    const v = dataLimitRef.current()
+    return v && v > 0 ? v : null
+  }
+  const setBasket = useCallback((id: number, bytes: number) => {
+    // taking over the overall volume: it starts from what the upstream field says
+    if (bytes > 0) setOverallState(o => (o === undefined ? upstreamOverall() : o))
+    setDraft(d => ({ ...(d ?? {}), [id]: bytes }))
+  }, [])
+  const setOverall = useCallback((bytes: number | null) => setOverallState(bytes), [])
+  const overallValue = overall === undefined ? upstreamOverall() : overall
 
   const apply = useCallback(
     async (target: string) => {
-      if (!visible || !draft) return
+      if (!visible || !draft || !ownsOverall) return
       let state = username ? current.data : undefined
       const base = adminBase(target)
       const wanted = baskets.map(b => ({ id: b.id, want: draft[b.id] ?? 0, have: state?.baskets.find(x => x.basket_id === b.id)?.data_limit ?? 0 }))
       const changes = wanted.filter(w => w.want !== w.have)
-      if (!changes.length) return
       if (!state?.basket_mode) {
         if (!changes.some(w => w.want > 0)) return
         state = await fetcher<AdminBaskets>(`${base}/enable`, { method: 'POST' })
       }
+      // the baskets first, then the overall volume: lowering it never cuts a service on the way
       for (const w of changes) await fetcher(`${base}/${w.id}`, { method: 'PUT', body: { data_limit: w.want } })
+      const want = overall === undefined ? upstreamOverall() : overall
+      if (want !== (state?.shared?.data_limit ?? null)) await fetcher(`${base}/shared`, { method: 'PUT', body: { data_limit: want } })
       await invalidateBasketQueries(client)
     },
-    [visible, draft, username, current.data, baskets, client],
+    [visible, draft, ownsOverall, overall, username, current.data, baskets, client],
   )
 
   return {
     visible,
+    ownsOverall,
     loading: open && canManage && (definitions.isLoading || (!!username && current.isLoading)),
     definitionsLoaded: !!definitions.data,
     baskets,
     current: current.data,
     draft,
+    overall: overallValue,
     setBasket,
+    setOverall,
     apply,
   }
 }
@@ -141,13 +164,7 @@ function GbField({ label, value, onChange, used }: { label: string; value: numbe
     <div className="flex flex-col gap-2">
       <span className="text-sm font-medium">{label}</span>
       <div className="relative">
-        <DecimalInput
-          placeholder="0"
-          value={value ? bytesToFormGigabytes(value) : null}
-          onValueChange={v => onChange(v == null ? 0 : (gbToBytes(v) ?? 0))}
-          emptyValue={undefined}
-          className="pr-10"
-        />
+        <DecimalInput placeholder="0" value={value ? bytesToFormGigabytes(value) : null} onValueChange={v => onChange(v == null ? 0 : (gbToBytes(v) ?? 0))} emptyValue={undefined} className="pr-10" />
         <span className="text-muted-foreground pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs font-medium">{t('userDialog.gb', { defaultValue: 'GB' })}</span>
       </div>
       {used != null && used > 0 && (
@@ -159,9 +176,49 @@ function GbField({ label, value, onChange, used }: { label: string; value: numbe
   )
 }
 
+/** The overall volume of an admin in basket mode: 0 is a real zero, unlimited is a separate switch. */
+function OverallField({ value, onChange, used }: { value: number | null; onChange: (bytes: number | null) => void; used?: number }) {
+  const { t } = useTranslation()
+  const unlimited = value == null
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">{t('trafficBaskets.overall', { defaultValue: 'Overall volume' })}</span>
+        <label className="flex cursor-pointer items-center gap-2 text-xs">
+          <Checkbox checked={unlimited} onCheckedChange={v => onChange(v ? null : 0)} />
+          {t('adminRoles.unlimited', { defaultValue: 'Unlimited' })}
+        </label>
+      </div>
+      <div className="relative">
+        <DecimalInput
+          placeholder={unlimited ? t('adminRoles.unlimited', { defaultValue: 'Unlimited' }) : '0'}
+          value={unlimited ? null : bytesToFormGigabytes(value ?? 0)}
+          onValueChange={v => onChange(v == null ? 0 : (gbToBytes(v) ?? 0))}
+          emptyValue={undefined}
+          disabled={unlimited}
+          className="pr-10"
+        />
+        <span className="text-muted-foreground pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs font-medium">{t('userDialog.gb', { defaultValue: 'GB' })}</span>
+      </div>
+      <p className="text-muted-foreground text-[11px]">
+        {unlimited
+          ? t('trafficBaskets.overallUnlimitedHint', { defaultValue: 'Unlimited overall volume: every service is unlimited, whatever its own volume.' })
+          : t('trafficBaskets.overallZeroHint', { defaultValue: '0 = no overall volume: each service uses only its own volume.' })}
+        {used != null && used > 0 && (
+          <>
+            {' · '}
+            {t('trafficBaskets.used', { defaultValue: 'Used' })}: <Ltr>{formatBytes(used)}</Ltr>
+          </>
+        )}
+      </p>
+    </div>
+  )
+}
+
 /**
- * Replaces the admin dialog's data limit field when baskets exist: one box with the data limit
- * (the overall volume, passed in as `dataLimitField`) and one volume field per basket under it.
+ * Replaces the admin dialog's data limit field when baskets exist: one box with the overall volume
+ * and one volume field per basket under it. Until the admin uses baskets, the overall volume is the
+ * dialog's own data limit field (`dataLimitField`), with upstream's meaning.
  */
 export function AdminBasketFields({ state, dataLimitField }: { state: AdminBasketsState; dataLimitField: React.ReactNode }) {
   const { t } = useTranslation()
@@ -175,7 +232,9 @@ export function AdminBasketFields({ state, dataLimitField }: { state: AdminBaske
         {t('trafficBaskets.volumes', { defaultValue: 'Volumes' })}
       </span>
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">{dataLimitField}</div>
+        <div className="sm:col-span-2">
+          {state.ownsOverall ? <OverallField value={state.overall} onChange={state.setOverall} used={current?.basket_mode ? current.shared?.used_traffic : undefined} /> : dataLimitField}
+        </div>
         {state.baskets.map(b => (
           <GbField key={b.id} label={b.name} value={draft[b.id] ?? 0} onChange={v => state.setBasket(b.id, v)} used={current?.basket_mode ? usedOf(b.id) : undefined} />
         ))}
@@ -192,8 +251,8 @@ export function AdminBasketFields({ state, dataLimitField }: { state: AdminBaske
 // ---------------------------------------------------------------- admins list
 
 /**
- * Data usage cell. For an admin in basket mode the bar is its overall (shared) volume, as in the dialog,
- * and each basket with a volume gets a small line under it.
+ * Data usage cell. For an admin in basket mode the bar is the sum of all its volumes (overall + every
+ * basket; unlimited when the overall volume is), and each volume gets a small line under it.
  */
 export function AdminUsageCell({
   username,
@@ -210,24 +269,26 @@ export function AdminUsageCell({
   status: string
   isMobile?: boolean
 }) {
+  const { t } = useTranslation()
   const { data } = useBasketOverview()
   const entry = data?.admins?.find(a => a.username === username)
   const inBaskets = !!entry?.basket_mode && !!entry.shared
-  const lines = inBaskets ? entry!.baskets.filter(b => (b.data_limit ?? 0) > 0 || b.used_traffic > 0) : []
+  const shared = inBaskets ? entry!.shared! : null
+  const own = inBaskets ? entry!.baskets.filter(b => (b.data_limit ?? 0) > 0 || b.used_traffic > 0) : []
+  const lines = [
+    ...own.map(b => ({ key: `b${b.basket_id}`, name: b.name, v: b as Volume })),
+    ...(shared && ((shared.data_limit ?? 0) > 0 || shared.used_traffic > 0) ? [{ key: 'shared', name: t('trafficBaskets.sharedShort', { defaultValue: 'Overall' }), v: shared }] : []),
+  ]
+  const total = shared ? (shared.data_limit == null ? null : shared.data_limit + own.reduce((n, b) => n + (b.data_limit ?? 0), 0)) : dataLimit
+  const usedAll = shared ? shared.used_traffic + own.reduce((n, b) => n + b.used_traffic, 0) : used
   return (
     <div className="flex w-full flex-col">
-      <UsageSliderCompact
-        isMobile={isMobile}
-        total={inBaskets ? entry!.shared!.data_limit : dataLimit}
-        used={inBaskets ? entry!.shared!.used_traffic : used}
-        totalUsedTraffic={lifetimeUsed}
-        status={status}
-      />
+      <UsageSliderCompact isMobile={isMobile} total={total} used={usedAll} totalUsedTraffic={lifetimeUsed} status={status} />
       {lines.length > 0 && (
         <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] leading-4">
-          {lines.map(b => (
-            <span key={b.basket_id} className={b.blocked ? 'text-destructive' : undefined}>
-              {b.name}: <Ltr>{`${formatBytes(b.used_traffic)} / ${formatBytes(b.data_limit ?? 0)}`}</Ltr>
+          {lines.map(({ key, name, v }) => (
+            <span key={key} className={v.blocked ? 'text-destructive' : undefined}>
+              {name}: <Ltr>{v.data_limit == null ? '∞' : `${formatBytes(v.used_traffic)} / ${formatBytes(v.data_limit)}`}</Ltr>
             </span>
           ))}
         </div>
@@ -311,84 +372,84 @@ export function BasketDefinitionsPanel() {
 
   return (
     <div className="space-y-4">
-        <p className="text-muted-foreground text-sm leading-6">
-          {t('trafficBaskets.definitionsHint', {
-            defaultValue:
-              'A basket is a set of groups. Usage on a node is charged to the basket of the groups it serves: first the admin’s own volume in that basket, then its shared volume. When both are empty, only that basket’s configs stop working for the admin’s users.',
-          })}
-        </p>
-        {isLoading ? (
-          <Skeleton className="h-24" />
-        ) : (
-          <div className="space-y-3">
-            {!!data?.ambiguous_node_ids?.length && (
-              <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                <span>
-                  {t('trafficBaskets.ambiguous', { defaultValue: 'These nodes serve groups of more than one basket, so their usage is charged to the shared volume:' })}{' '}
-                  <Ltr>{data.ambiguous_node_ids.join(', ')}</Ltr>
-                </span>
-              </div>
-            )}
-            <div className="grid gap-3 md:grid-cols-2">
-              {data?.baskets.map(b =>
-                editing === b.id ? (
-                  <BasketEditor key={b.id} groups={groups} initial={b} onDone={() => setEditing(null)} />
-                ) : (
-                  <div key={b.id} className="space-y-2 rounded-md border p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-2 font-medium">
-                        <Layers className="text-primary h-4 w-4" />
-                        {b.name}
-                      </span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditing(b.id)} aria-label={t('edit', { defaultValue: 'Edit' })}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button type="button" size="icon" variant="ghost" className="text-destructive h-8 w-8" onClick={() => setDeleting(b)} aria-label={t('delete', { defaultValue: 'Delete' })}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {b.group_ids.length ? (
-                        b.group_ids.map(id => (
-                          <Badge key={id} variant="secondary">
-                            {groupName.get(id) ?? `#${id}`}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-muted-foreground text-xs">{t('trafficBaskets.noGroups', { defaultValue: 'No groups yet' })}</span>
-                      )}
+      <p className="text-muted-foreground text-sm leading-6">
+        {t('trafficBaskets.definitionsHint', {
+          defaultValue:
+            'A basket is a set of groups. Usage on a node is charged to the basket of the groups it serves: first the admin’s own volume in that basket, then its shared volume. When both are empty, only that basket’s configs stop working for the admin’s users.',
+        })}
+      </p>
+      {isLoading ? (
+        <Skeleton className="h-24" />
+      ) : (
+        <div className="space-y-3">
+          {!!data?.ambiguous_node_ids?.length && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <span>
+                {t('trafficBaskets.ambiguous', { defaultValue: 'These nodes serve groups of more than one basket, so their usage is charged to the shared volume:' })}{' '}
+                <Ltr>{data.ambiguous_node_ids.join(', ')}</Ltr>
+              </span>
+            </div>
+          )}
+          <div className="grid gap-3 md:grid-cols-2">
+            {data?.baskets.map(b =>
+              editing === b.id ? (
+                <BasketEditor key={b.id} groups={groups} initial={b} onDone={() => setEditing(null)} />
+              ) : (
+                <div key={b.id} className="space-y-2 rounded-md border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 font-medium">
+                      <Layers className="text-primary h-4 w-4" />
+                      {b.name}
+                    </span>
+                    <div className="flex gap-1">
+                      <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditing(b.id)} aria-label={t('edit', { defaultValue: 'Edit' })}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button type="button" size="icon" variant="ghost" className="text-destructive h-8 w-8" onClick={() => setDeleting(b)} aria-label={t('delete', { defaultValue: 'Delete' })}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
-                ),
-              )}
-              {editing === 'new' ? (
-                <BasketEditor groups={groups} onDone={() => setEditing(null)} />
-              ) : (
-                <Button type="button" variant="outline" className="h-auto min-h-16 border-dashed" onClick={() => setEditing('new')}>
-                  <Plus className="h-4 w-4" />
-                  {t('trafficBaskets.newBasket', { defaultValue: 'New basket' })}
-                </Button>
-              )}
-            </div>
+                  <div className="flex flex-wrap gap-1">
+                    {b.group_ids.length ? (
+                      b.group_ids.map(id => (
+                        <Badge key={id} variant="secondary">
+                          {groupName.get(id) ?? `#${id}`}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground text-xs">{t('trafficBaskets.noGroups', { defaultValue: 'No groups yet' })}</span>
+                    )}
+                  </div>
+                </div>
+              ),
+            )}
+            {editing === 'new' ? (
+              <BasketEditor groups={groups} onDone={() => setEditing(null)} />
+            ) : (
+              <Button type="button" variant="outline" className="h-auto min-h-16 border-dashed" onClick={() => setEditing('new')}>
+                <Plus className="h-4 w-4" />
+                {t('trafficBaskets.newBasket', { defaultValue: 'New basket' })}
+              </Button>
+            )}
           </div>
-        )}
-        <AlertDialog open={!!deleting} onOpenChange={o => !o && setDeleting(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('trafficBaskets.deleteTitle', { defaultValue: 'Delete this basket?' })}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t('trafficBaskets.deleteHint', { defaultValue: "Every admin's volume in this basket is deleted with it; its groups are then covered by the shared volume only." })}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('cancel', { defaultValue: 'Cancel' })}</AlertDialogCancel>
-              <AlertDialogAction onClick={remove}>{t('delete', { defaultValue: 'Delete' })}</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        </div>
+      )}
+      <AlertDialog open={!!deleting} onOpenChange={o => !o && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('trafficBaskets.deleteTitle', { defaultValue: 'Delete this basket?' })}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('trafficBaskets.deleteHint', { defaultValue: "Every admin's volume in this basket is deleted with it; its groups are then covered by the shared volume only." })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancel', { defaultValue: 'Cancel' })}</AlertDialogCancel>
+            <AlertDialogAction onClick={remove}>{t('delete', { defaultValue: 'Delete' })}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -418,3 +418,46 @@ def test_usage_of_a_node_with_several_baskets_is_never_free(access_token):
     finally:
         delete_admin(access_token, operator["username"])
         world.cleanup(access_token)
+
+
+def test_reseller_does_not_see_groups_of_a_used_up_basket(access_token):
+    """A reseller without any volume for a basket (own and shared both 0) does not get its groups in the
+    group lists; buying volume brings them back. The owner always sees every group."""
+    world = _World(access_token)
+    operator = _operator(access_token, 4 * GB)
+    try:
+        world.make_baskets()
+        name = operator["username"]
+        base = f"/api/admin/by-username/{name}/baskets"
+        client.post(f"{base}/enable", headers=world.headers)
+        client.put(f"{base}/{world.xray['id']}", headers=world.headers, json={"data_limit": 2 * GB})
+        r = client.put(f"{base}/shared", headers=world.headers, json={"data_limit": 0})  # «Xray only»
+        assert r.status_code == status.HTTP_200_OK, r.text
+        assert r.json()["shared"]["data_limit"] == 0  # a real zero, not unlimited
+
+        reseller = _login(operator)
+
+        def simple_ids(headers):
+            r = client.get("/api/groups/simple", params={"all": True}, headers=headers)
+            assert r.status_code == status.HTTP_200_OK, r.text
+            body = r.json()
+            ids = {g["id"] for g in body["groups"]}
+            assert body["total"] >= len(ids)
+            return ids
+
+        seen = simple_ids(reseller)
+        assert world.xray_group["id"] in seen
+        assert world.wg_group["id"] not in seen
+        both = simple_ids(world.headers)
+        assert {world.xray_group["id"], world.wg_group["id"]} <= both
+
+        full = client.get("/api/groups", headers=reseller)
+        if full.status_code == status.HTTP_200_OK:  # only when the role may read full groups
+            assert world.wg_group["id"] not in {g["id"] for g in full.json()["groups"]}
+
+        # buying WireGuard volume shows the group again
+        client.put(f"{base}/{world.wg['id']}", headers=world.headers, json={"data_limit": GB})
+        assert world.wg_group["id"] in simple_ids(reseller)
+    finally:
+        delete_admin(access_token, operator["username"])
+        world.cleanup(access_token)

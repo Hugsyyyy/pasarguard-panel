@@ -164,7 +164,10 @@ export default function AdminModal({ isDialogOpen, onOpenChange, editingAdminId,
     open: isDialogOpen,
     username: editingAdmin ? form.getValues('username') || null : null,
     canManage: (currentIsOwner || hasPermission(currentAdminDetails, 'admins', 'update')) && !(editingAdmin && selectedRoleId === 1) && (currentIsOwner || !isEditingCurrentAdmin),
-    onShared: bytes => form.resetField('data_limit', { defaultValue: bytes }),
+    dataLimit: () => {
+      const v = form.getValues('data_limit')
+      return typeof v === 'number' ? v : null
+    },
   })
   const applyBaskets = async (username: string) => {
     try {
@@ -262,8 +265,12 @@ export default function AdminModal({ isDialogOpen, onOpenChange, editingAdminId,
       const isEditingCurrentAdmin = editingAdmin && currentAdminDetails != null && ((currentAdminDetails.id != null && editingAdminId === currentAdminDetails.id) || values.username === currentAdminDetails.username)
       const dataLimitChanged = !!form.formState.dirtyFields.data_limit
       const dataLimitHasValue = values.data_limit !== null && values.data_limit !== undefined && values.data_limit !== ''
-      const dataLimitPayload = editingAdmin
-        ? dataLimitChanged
+      // Pengu fork: in basket mode the volumes box sets the overall volume itself (0 = zero there,
+      // while upstream reads a sent 0 as unlimited), so the data limit is not sent.
+      const dataLimitPayload = basketState.ownsOverall
+        ? {}
+        : editingAdmin
+          ? dataLimitChanged
           ? { data_limit: normalizeDataLimit(values.data_limit) }
           : {}
         : dataLimitHasValue

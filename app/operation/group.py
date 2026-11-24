@@ -35,6 +35,7 @@ from app.models.group import (
 from app.models.user import BulkOperationDryRunResponse, UserListQuery
 from app.node.sync import sync_users
 from app.operation import BaseOperation, OperatorType
+from app.operation.pengu_baskets import hidden_group_ids
 from app.operation.permissions import apply_group_access
 from app.utils.logger import get_logger
 
@@ -85,6 +86,12 @@ class GroupOperation(BaseOperation):
     async def get_all_groups(self, db: AsyncSession, query: GroupListQuery, admin: Admin) -> GroupsResponse:
         query.ids = apply_group_access(admin, query.ids)
         db_groups, count = await get_group(db, query)
+        # Pengu fork: a reseller does not see the groups of a used-up traffic basket.
+        hidden = await hidden_group_ids(db, admin)
+        if hidden:
+            kept = [g for g in db_groups if g.id not in hidden]
+            count -= len(db_groups) - len(kept)
+            db_groups = kept
         return GroupsResponse(groups=db_groups, total=count)
 
     async def get_groups_simple(
@@ -96,6 +103,11 @@ class GroupOperation(BaseOperation):
         """Get lightweight group list with only id and name"""
         query.ids = apply_group_access(admin, query.ids)
         rows, total = await get_groups_simple(db=db, query=query)
+        hidden = await hidden_group_ids(db, admin)  # Pengu fork: groups of a used-up basket
+        if hidden:
+            kept = [row for row in rows if row[0] not in hidden]
+            total -= len(rows) - len(kept)
+            rows = kept
         groups = [GroupSimple(id=row[0], name=row[1]) for row in rows]
         return GroupsSimpleResponse(groups=groups, total=total)
 

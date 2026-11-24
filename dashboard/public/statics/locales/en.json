@@ -4326,6 +4326,10 @@
     "deleteHint": "Every admin's volume in this category is deleted with it; its groups are then covered by the overall volume only.",
     "ambiguous": "These nodes serve groups of more than one category, so their usage is charged to those categories in turn, then to the overall volume:",
     "perServiceHint": "Data limit is the overall volume, good for every service. Each service uses its own volume first, then the overall one; when both run out only that service stops.",
-    "volumes": "Volumes"
+    "volumes": "Volumes",
+    "overall": "Overall volume",
+    "overallZeroHint": "0 = no overall volume: each service uses only its own volume.",
+    "overallUnlimitedHint": "Unlimited overall volume: every service is unlimited, whatever its own volume.",
+    "remaining": "Remaining volume"
   }
 }

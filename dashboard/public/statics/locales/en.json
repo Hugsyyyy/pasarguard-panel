@@ -203,6 +203,9 @@
   "manageHosts": "Manage and control hosts",
   "manageSettings": "Manage and control settings",
   "settings": {
+    "baskets": {
+      "title": "Volume categories"
+    },
     "title": "Settings",
     "general": {
       "title": "General",
@@ -4310,21 +4313,19 @@
     "removeDescription": "Admins who chose this page go back to the panel’s default page ({{count}} now). You can install it again later."
   },
   "trafficBaskets": {
-    "definitions": "Baskets",
-    "definitionsHint": "A basket is a set of groups. Usage on a node is charged to the basket of the groups it serves: first the admin's own volume in that basket, then its shared volume. When both are empty, only that basket's configs stop working for the admin's users, and no new users can be added to its groups.",
+    "definitionsHint": "A category is a set of groups (e.g. Xray or WireGuard). Usage on a node is charged to the category of the groups it serves: first the admin's volume in that category, then its overall volume. When both are empty, only that category's configs stop working for the admin's users, and no new users can be added to its groups. Set each admin's volume per category in that admin's dialog on the Admins page.",
     "sharedShort": "Overall",
     "used": "Used",
     "save": "Save",
     "saved": "Saved",
     "saveFailed": "Could not save",
-    "newBasket": "New basket",
-    "namePlaceholder": "Basket name, e.g. WireGuard",
+    "newBasket": "New category",
+    "namePlaceholder": "Category name, e.g. WireGuard",
     "noGroups": "No groups yet",
-    "deleteTitle": "Delete this basket?",
-    "deleteHint": "Every admin's volume in this basket is deleted with it; its groups are then covered by the shared volume only.",
-    "ambiguous": "These nodes serve groups of more than one basket, so their usage is charged to the shared volume:",
-    "manage": "Define baskets",
-    "perService": "Volume per service",
-    "perServiceHint": "Data limit above is the overall volume, good for every service. Each service uses its own volume first, then the overall one; when both run out only that service stops."
+    "deleteTitle": "Delete this category?",
+    "deleteHint": "Every admin's volume in this category is deleted with it; its groups are then covered by the overall volume only.",
+    "ambiguous": "These nodes serve groups of more than one category, so their usage is charged to those categories in turn, then to the overall volume:",
+    "perServiceHint": "Data limit is the overall volume, good for every service. Each service uses its own volume first, then the overall one; when both run out only that service stops.",
+    "volumes": "Volumes"
   }
 }

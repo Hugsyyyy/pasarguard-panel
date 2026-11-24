@@ -40,6 +40,7 @@ const NotificationSettings = lazyWithChunkRecovery(() => import('../pages/_dashb
 const SubscriptionSettings = lazyWithChunkRecovery(() => import('../pages/_dashboard.settings.subscriptions'))
 const TelegramSettings = lazyWithChunkRecovery(() => import('../pages/_dashboard.settings.telegram'))
 const WebhookSettings = lazyWithChunkRecovery(() => import('../pages/_dashboard.settings.webhook'))
+const BasketSettings = lazyWithChunkRecovery(() => import('../pages/_dashboard.settings.baskets'))
 const Statistics = lazyWithChunkRecovery(() => import('../pages/_dashboard.statistics'))
 const TemplatesLayout = lazyWithChunkRecovery(() => import('../pages/_dashboard.templates'))
 const UserTemplates = lazyWithChunkRecovery(() => import('../pages/_dashboard.templates.user'))
@@ -346,6 +347,14 @@ export const router = createHashRouter([
             element: (
               <Suspense fallback={<LoadingSpinner />}>
                 <CleanupSettings />
+              </Suspense>
+            ),
+          },
+          {
+            path: '/settings/baskets',
+            element: (
+              <Suspense fallback={<LoadingSpinner />}>
+                <BasketSettings />
               </Suspense>
             ),
           },

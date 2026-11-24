@@ -496,8 +496,7 @@ export default function AdminModal({ isDialogOpen, onOpenChange, editingAdminId,
                     </FormItem>
                   )}
                 />
-                <AdminDataLimitField form={form} />
-                <AdminBasketFields state={basketState} isOwner={currentIsOwner} />
+                <AdminBasketFields state={basketState} dataLimitField={<AdminDataLimitField form={form} />} />
               </div>
 
               {/* Advanced settings: collapsed by default */}

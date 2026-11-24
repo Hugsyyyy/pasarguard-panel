@@ -1,4 +1,4 @@
-// Pengu fork: an admin's traffic baskets in the sidebar (see pages/_dashboard.traffic-baskets.tsx).
+// Pengu fork: an admin's traffic baskets next to its name (volumes are set in the admin dialog, features/admins/components/pengu-admin-baskets.tsx).
 import { Progress } from '@/components/ui/progress'
 import { fetcher } from '@/service/http'
 import { formatBytes } from '@/utils/formatByte'

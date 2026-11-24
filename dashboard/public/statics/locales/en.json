@@ -4310,23 +4310,10 @@
     "removeDescription": "Admins who chose this page go back to the panel’s default page ({{count}} now). You can install it again later."
   },
   "trafficBaskets": {
-    "title": "Traffic baskets",
-    "description": "Separate volume per service (for example Xray and WireGuard) for each admin, plus a shared volume that covers every service.",
-    "myVolumes": "My volumes",
     "definitions": "Baskets",
     "definitionsHint": "A basket is a set of groups. Usage on a node is charged to the basket of the groups it serves: first the admin's own volume in that basket, then its shared volume. When both are empty, only that basket's configs stop working for the admin's users, and no new users can be added to its groups.",
-    "adminVolumes": "Admins' volumes",
-    "shared": "Shared (every service)",
-    "sharedShort": "Shared",
+    "sharedShort": "Overall",
     "used": "Used",
-    "remaining": "Remaining",
-    "usedUp": "Used up",
-    "active": "Active",
-    "unlimited": "Unlimited",
-    "limitGb": "Limit (GB)",
-    "setLimit": "Set limit (GB)",
-    "addGb": "Add (GB)",
-    "add": "Add",
     "save": "Save",
     "saved": "Saved",
     "saveFailed": "Could not save",
@@ -4336,9 +4323,8 @@
     "deleteTitle": "Delete this basket?",
     "deleteHint": "Every admin's volume in this basket is deleted with it; its groups are then covered by the shared volume only.",
     "ambiguous": "These nodes serve groups of more than one basket, so their usage is charged to the shared volume:",
-    "searchAdmin": "Search an admin",
-    "enableHint": "This admin uses one volume for every service. Turning baskets on keeps that volume as its shared volume; then you can give it volume per basket.",
-    "enable": "Turn on baskets",
-    "notInBasketMode": "Your panel uses one volume for every service."
+    "manage": "Define baskets",
+    "perService": "Volume per service",
+    "perServiceHint": "Data limit above is the overall volume, good for every service. Each service uses its own volume first, then the overall one; when both run out only that service stops."
   }
 }

@@ -4,7 +4,7 @@ import { ChevronDown, MoreVertical, Pen, Power, PowerOff, RefreshCw, Trash2, Use
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { AdminStatusBadge } from './admin-status-badge'
-import UsageSliderCompact from '@/components/common/usage-slider-compact'
+import { AdminUsageCell } from '@/features/admins/components/pengu-admin-baskets'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { isOwner } from '@/utils/rbac'
@@ -175,10 +175,11 @@ export const setupColumns = ({
     header: () => createSortButton('used_traffic', 'dataUsage', t, handleSort, filters, 'justify-start', 'admins.used.traffic'),
     cell: ({ row }) => (
       <div className="flex w-full items-center justify-between gap-1 py-1">
-        <UsageSliderCompact
-          total={row.original.data_limit}
+        <AdminUsageCell
+          username={row.original.username}
+          dataLimit={row.original.data_limit}
           used={row.original.used_traffic || 0}
-          totalUsedTraffic={row.original.lifetime_used_traffic ?? undefined}
+          lifetimeUsed={row.original.lifetime_used_traffic ?? undefined}
           status={getAdminStatus(row.original)}
         />
       </div>
